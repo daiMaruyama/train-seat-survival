@@ -22,6 +22,12 @@ namespace TrainSurvival.Game
         private bool _seated;
         private SeatMarker _highlighted;
 
+        /// <summary>着席中か（StaminaSystem などが読む）。</summary>
+        public bool IsSeated => _seated;
+
+        /// <summary>今フレーム、視線の先に座れる空席があるか（HUD のプロンプト用）。</summary>
+        public bool CanSitNow { get; private set; }
+
         private void Start()
         {
             _director = FindFirstObjectByType<CommuteDirector>();
@@ -38,6 +44,7 @@ namespace TrainSurvival.Game
             // 着席中は狙い直しをせず、E で立つだけ。
             if (_seated)
             {
+                CanSitNow = false;
                 if (PressedSit())
                 {
                     Stand();
@@ -46,6 +53,7 @@ namespace TrainSurvival.Game
             }
 
             int target = AimedSeat();
+            CanSitNow = target >= 0;
             if (PressedSit() && target >= 0)
             {
                 SitDown(target);
@@ -144,25 +152,6 @@ namespace TrainSurvival.Game
             Vector3 local = _camera.localPosition;
             local.y = y;
             _camera.localPosition = local;
-        }
-
-        private void OnGUI()
-        {
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 18, richText = true, alignment = TextAnchor.MiddleCenter };
-            float w = 300f;
-            var rect = new Rect((Screen.width - w) * 0.5f, Screen.height - 70f, w, 30f);
-
-            if (_seated)
-            {
-                GUI.Label(rect, "<b><color=#7fd0ff>着席中</color></b>   E で立つ", style);
-            }
-            else if (_highlighted != null)
-            {
-                GUI.Label(rect, "<b>E</b>  座る", style);
-            }
-
-            // 画面中央のクロスヘア。
-            GUI.Label(new Rect(Screen.width * 0.5f - 6f, Screen.height * 0.5f - 12f, 12f, 24f), "+");
         }
     }
 }

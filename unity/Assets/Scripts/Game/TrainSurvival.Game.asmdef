@@ -3,7 +3,8 @@
     "rootNamespace": "TrainSurvival.Game",
     "references": [
         "TrainSurvival.Core",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEngine.UI"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

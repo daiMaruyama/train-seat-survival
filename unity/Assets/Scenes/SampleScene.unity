@@ -444,6 +444,7 @@ GameObject:
   - component: {fileID: 1407492778}
   - component: {fileID: 1407492777}
   - component: {fileID: 1407492780}
+  - component: {fileID: 1407492781}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -522,6 +523,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.PlayerSit
   _reach: 1.6
   _seatedCameraDrop: 0.5
+--- !u!114 &1407492781
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1407492776}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b316bb05b1cc49f192f913711b312b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.StaminaSystem
+  _max: 100
+  _drainPerSecond: 4
+  _recoverPerSecond: 8
 --- !u!1 &1419756270
 GameObject:
   m_ObjectHideFlags: 0
@@ -586,7 +602,51 @@ MonoBehaviour:
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.CommuteDirector
   _seed: 12345
   _stationCount: 10
-  _emptySeatsAtStart: 8
+  _standeeCount: 28
+--- !u!1 &1904752192
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1904752194}
+  - component: {fileID: 1904752193}
+  m_Layer: 0
+  m_Name: HUD
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1904752193
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1904752192}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 171bf1f149a814cfaac726d76cc8e7ea, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.HudView
+--- !u!4 &1904752194
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1904752192}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -596,3 +656,4 @@ SceneRoots:
   - {fileID: 832575519}
   - {fileID: 1419756272}
   - {fileID: 1407492779}
+  - {fileID: 1904752194}
