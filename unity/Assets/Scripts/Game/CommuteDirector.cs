@@ -44,7 +44,9 @@ namespace TrainSurvival.Game
         private readonly Dictionary<int, int> _seatOfPassenger = new Dictionary<int, int>();
         private readonly List<Standee> _standees = new List<Standee>();
         private readonly Dictionary<int, Standee> _standeeOf = new Dictionary<int, Standee>();
+        private PlayerSit _player;
         private int _playerSeat = -1;
+        private int _playerClaim = -1;   // プレイヤーが予約している席（-1 は無し）
 
         private void Awake()
         {
@@ -58,6 +60,7 @@ namespace TrainSurvival.Game
             _seatView = new PassengerActor[seatCount];
             _camperOfSeat = new Standee[seatCount];
             _pool = new PassengerPool(transform);
+            _player = FindFirstObjectByType<PlayerSit>();
 
             int aboard = seatCount + _standeeCount;
             var config = new CommuteConfig { StationCount = _stationCount, PassengerCount = aboard };
@@ -153,6 +156,15 @@ namespace TrainSurvival.Game
         /// <summary>空いた席を誰かが取る：陣取っていた立ち客、いなければ近くの立ち客。誰もいなければ空いたまま。</summary>
         private void ResolveOpening(int seat)
         {
+            // 予約していたプレイヤーが最優先で滑り込む。
+            if (_playerClaim == seat && _player != null)
+            {
+                _playerClaim = -1;
+                _playerSeat = seat;
+                _player.SlideInto(_car.Seats[seat]);
+                return;
+            }
+
             Standee taker = _camperOfSeat[seat] ?? NearestStandee(SeatPosition(seat), TakeSeatRadius);
             if (taker == null)
             {
@@ -241,7 +253,7 @@ namespace TrainSurvival.Game
             var candidates = new List<int>();
             for (int i = 0; i < _camperOfSeat.Length; i++)
             {
-                if (_camperOfSeat[i] == null && _playerSeat != i)
+                if (_camperOfSeat[i] == null && _playerSeat != i && _playerClaim != i)
                 {
                     candidates.Add(i);
                 }
@@ -338,6 +350,18 @@ namespace TrainSurvival.Game
 
         public void SetPlayerSeat(int index) => _playerSeat = index;
         public void ClearPlayerSeat() => _playerSeat = -1;
+
+        // プレイヤーの「予約（位置取り）」。埋まっていて、誰も陣取っていない席だけ予約できる。
+        public bool CanClaim(int seat)
+        {
+            return seat >= 0 && seat < _seatOccupant.Length
+                && _seatOccupant[seat] != null
+                && _camperOfSeat[seat] == null
+                && _playerSeat != seat;
+        }
+
+        public void SetPlayerClaim(int seat) => _playerClaim = seat;
+        public void ClearPlayerClaim() => _playerClaim = -1;
 
         public int CurrentStation => _world?.CurrentStation ?? 0;
         public int StationCount => _stationCount;

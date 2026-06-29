@@ -4,13 +4,14 @@ using UnityEngine.InputSystem;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 空席に座る処理。画面中央から視線レイを飛ばし、当たった席が空いていれば座面を点灯させる
-    /// （＝見ている席だけが対象。後ろを向いていると座れない）。E で着席：その席へスナップし、通路を
-    /// 向き、カメラを下げ、歩行を止める。もう一度 E で起立。（回復や席の取り合いは次の段で。）
+    /// 満員電車での「位置取り（陣取り）」と滑り込み。視線の先にある"埋まっている席"を E で予約し
+    /// （誰も陣取っていない席だけ）、その席が空いた瞬間に <see cref="CommuteDirector"/> から呼ばれて
+    /// 自動で滑り込む。歩いて拾える空席は無いので、座る唯一の手段は「降りそうな人を読んで先に予約する」こと。
+    /// （"降りそう度"を読むメガネ情報は後の段。今は予約と滑り込みの土台。）
     /// </summary>
     public sealed class PlayerSit : MonoBehaviour
     {
-        [SerializeField] private float _reach = 2.6f;
+        [SerializeField] private float _reach = 2.8f;
         [SerializeField] private float _seatedCameraDrop = 0.5f;
 
         private CommuteDirector _director;
@@ -20,13 +21,13 @@ namespace TrainSurvival.Game
         private bool _capturedEyeHeight;
 
         private bool _seated;
-        private SeatMarker _highlighted;
+        private int _claimedSeat = -1;
+        private SeatMarker _claimedMarker;
+        private bool _aimClaimable;
 
-        /// <summary>着席中か（StaminaSystem などが読む）。</summary>
         public bool IsSeated => _seated;
-
-        /// <summary>今フレーム、視線の先に座れる空席があるか（HUD のプロンプト用）。</summary>
-        public bool CanSitNow { get; private set; }
+        public bool HasClaim => _claimedSeat >= 0;
+        public bool CanClaimNow => _aimClaimable;
 
         private void Start()
         {
@@ -41,76 +42,77 @@ namespace TrainSurvival.Game
                 return;
             }
 
-            // 着席中は狙い直しをせず、E で立つだけ。
+            // 着席中は予約せず、E で立つだけ。
             if (_seated)
             {
-                CanSitNow = false;
-                if (PressedSit())
+                _aimClaimable = false;
+                if (Pressed())
                 {
                     Stand();
                 }
                 return;
             }
 
-            int target = AimedSeat();
-            CanSitNow = target >= 0;
-            if (PressedSit() && target >= 0)
+            SeatMarker aim = AimedSeat();
+            _aimClaimable = aim != null && _director.CanClaim(aim.Index);
+
+            if (Pressed())
             {
-                SitDown(target);
+                if (_aimClaimable)
+                {
+                    Claim(aim);
+                }
+                else if (aim != null && aim.Index == _claimedSeat)
+                {
+                    Unclaim();
+                }
             }
         }
 
-        /// <summary>視線レイで狙っている空席の index を返す（無ければ -1）。ついでに座面を点灯。</summary>
-        private int AimedSeat()
+        private SeatMarker AimedSeat()
         {
             EnsureCamera();
-
-            int index = -1;
-            SeatMarker marker = null;
-            if (_camera != null &&
-                Physics.Raycast(_camera.position, _camera.forward, out RaycastHit hit, _reach) &&
-                hit.collider.TryGetComponent(out marker) &&
-                _director.IsSeatGrabbable(marker.Index))
+            if (_camera != null
+                && Physics.Raycast(_camera.position, _camera.forward, out RaycastHit hit, _reach)
+                && hit.collider.TryGetComponent(out SeatMarker marker))
             {
-                index = marker.Index;
+                return marker;
             }
-
-            Highlight(index >= 0 ? marker : null);
-            return index;
+            return null;
         }
 
-        private void Highlight(SeatMarker marker)
+        // 予約：その席をハイライトし、Director に「ここを狙ってる」と伝える。
+        private void Claim(SeatMarker marker)
         {
-            if (_highlighted == marker)
+            if (_claimedMarker != null)
             {
-                return;
+                _claimedMarker.SetHighlighted(false);
             }
-            if (_highlighted != null)
-            {
-                _highlighted.SetHighlighted(false);
-            }
-            _highlighted = marker;
-            if (_highlighted != null)
-            {
-                _highlighted.SetHighlighted(true);
-            }
+            _claimedMarker = marker;
+            _claimedSeat = marker.Index;
+            marker.SetHighlighted(true);
+            _director.SetPlayerClaim(_claimedSeat);
         }
 
-        private void SitDown(int seatIndex)
+        private void Unclaim()
+        {
+            ClearClaimVisual();
+            _director.ClearPlayerClaim();
+        }
+
+        /// <summary>予約した席が空いたとき、Director から呼ばれて滑り込む（座る唯一の手段）。</summary>
+        public void SlideInto(SeatAnchor seat)
         {
             EnsureCamera();
-            SeatAnchor seat = _director.GetSeat(seatIndex);
+            ClearClaimVisual();
+
             transform.SetPositionAndRotation(seat.Position, seat.Facing);
-
             if (_controller != null)
             {
                 _controller.CanMove = false;
             }
             SetCameraHeight(_standEyeHeight - _seatedCameraDrop);
-
-            _director.SetPlayerSeat(seatIndex);
             _seated = true;
-            Highlight(null);
         }
 
         private void Stand()
@@ -120,12 +122,21 @@ namespace TrainSurvival.Game
                 _controller.CanMove = true;
             }
             SetCameraHeight(_standEyeHeight);
-
             _director.ClearPlayerSeat();
             _seated = false;
         }
 
-        private static bool PressedSit()
+        private void ClearClaimVisual()
+        {
+            if (_claimedMarker != null)
+            {
+                _claimedMarker.SetHighlighted(false);
+            }
+            _claimedMarker = null;
+            _claimedSeat = -1;
+        }
+
+        private static bool Pressed()
         {
             return Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
         }

@@ -22,18 +22,21 @@ namespace TrainSurvival.Game
         private StaminaSystem _stamina;
         private CommuteDirector _director;
         private PlayerSit _player;
+        private RunController _run;
 
         private RectTransform _fill;
         private Image _fillImage;
         private Text _staminaLabel;
         private Text _info;
         private Text _prompt;
+        private Text _gameOver;
 
         private void Start()
         {
             _stamina = FindFirstObjectByType<StaminaSystem>();
             _director = FindFirstObjectByType<CommuteDirector>();
             _player = FindFirstObjectByType<PlayerSit>();
+            _run = FindFirstObjectByType<RunController>();
             Build();
         }
 
@@ -55,9 +58,15 @@ namespace TrainSurvival.Game
 
             if (_player != null)
             {
-                _prompt.text = _player.IsSeated ? "着席中    E で立つ"
-                             : _player.CanSitNow ? "E    座る"
+                _prompt.text = _player.IsSeated ? "E で立つ"
+                             : _player.HasClaim ? "予約中    空くのを待つ"
+                             : _player.CanClaimNow ? "E    予約"
                              : string.Empty;
+            }
+
+            if (_gameOver != null)
+            {
+                _gameOver.text = _run != null && _run.IsOver ? "倒れた…\nR でやり直し" : string.Empty;
             }
         }
 
@@ -104,6 +113,14 @@ namespace TrainSurvival.Game
             crosshair.rectTransform.pivot = new Vector2(0.5f, 0.5f);
             crosshair.rectTransform.anchoredPosition = Vector2.zero;
             crosshair.rectTransform.sizeDelta = new Vector2(40f, 40f);
+
+            _gameOver = CreateText("GameOver", root, 40, TextAnchor.MiddleCenter);
+            _gameOver.color = new Color(1f, 0.5f, 0.5f);
+            _gameOver.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            _gameOver.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            _gameOver.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            _gameOver.rectTransform.anchoredPosition = new Vector2(0f, 40f);
+            _gameOver.rectTransform.sizeDelta = new Vector2(600f, 200f);
         }
 
         private static void Anchor(RectTransform rt, Vector2 anchor, Vector2 position, Vector2 size)

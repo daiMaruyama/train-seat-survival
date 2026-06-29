@@ -445,6 +445,7 @@ GameObject:
   - component: {fileID: 1407492777}
   - component: {fileID: 1407492780}
   - component: {fileID: 1407492781}
+  - component: {fileID: 1407492782}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -538,6 +539,18 @@ MonoBehaviour:
   _max: 100
   _drainPerSecond: 4
   _recoverPerSecond: 8
+--- !u!114 &1407492782
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1407492776}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2837edbb631694527b10a11a35ef5e8e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.RunController
 --- !u!1 &1419756270
 GameObject:
   m_ObjectHideFlags: 0
