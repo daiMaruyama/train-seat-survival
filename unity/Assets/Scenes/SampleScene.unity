@@ -537,8 +537,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.StaminaSystem
   _max: 100
-  _drainPerSecond: 4
-  _recoverPerSecond: 8
+  _drainPerSecond: 3
+  _recoverPerSecond: 1
 --- !u!114 &1407492782
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -616,6 +616,10 @@ MonoBehaviour:
   _seed: 12345
   _stationCount: 10
   _standeeCount: 28
+  _secondsPerStation: 8
+  _drainRampPerLeg: 0.25
+  _takerHesitation: 0.45
+  _sitReward: 40
 --- !u!1 &1904752192
 GameObject:
   m_ObjectHideFlags: 0

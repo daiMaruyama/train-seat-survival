@@ -30,6 +30,8 @@ namespace TrainSurvival.Game
         private Text _info;
         private Text _prompt;
         private Text _gameOver;
+        private Image _fade;      // 日替わり演出の黒フェード（Director の値を映すだけ）
+        private Text _dayLabel;   // 「2日目」など
 
         private void Start()
         {
@@ -52,21 +54,27 @@ namespace TrainSurvival.Game
 
             if (_director != null)
             {
-                string tail = _director.IsEndOfLine ? "   終点" : "   Space 次の駅へ";
-                _info.text = $"駅 {_director.CurrentStation}/{_director.StationCount - 1}    空席 {_director.FreeSeats}{tail}";
+                _info.text = $"{_director.Leg + 1}日目    駅 {_director.CurrentStation}/{_director.StationCount - 1}"
+                           + $"    生存 {_director.TotalStationsSurvived}駅    次の駅まで {_director.SecondsToNextStation:0}s";
+
+                Color fadeColor = _fade.color;
+                fadeColor.a = _director.TransitionAlpha;
+                _fade.color = fadeColor;
+                _dayLabel.text = _director.TransitionLabel;
             }
 
             if (_player != null)
             {
                 _prompt.text = _player.IsSeated ? "E で立つ"
-                             : _player.HasClaim ? "予約中    空くのを待つ"
-                             : _player.CanClaimNow ? "E    予約"
+                             : _player.CanSitNow ? "E    座る"
                              : string.Empty;
             }
 
             if (_gameOver != null)
             {
-                _gameOver.text = _run != null && _run.IsOver ? "倒れた…\nR でやり直し" : string.Empty;
+                _gameOver.text = _run != null && _run.IsOver
+                    ? $"倒れた…\n生存 {(_director != null ? _director.TotalStationsSurvived : 0)}駅\nR でやり直し"
+                    : string.Empty;
             }
         }
 
@@ -113,6 +121,22 @@ namespace TrainSurvival.Game
             crosshair.rectTransform.pivot = new Vector2(0.5f, 0.5f);
             crosshair.rectTransform.anchoredPosition = Vector2.zero;
             crosshair.rectTransform.sizeDelta = new Vector2(40f, 40f);
+
+            // 日替わり演出：全画面の黒フェード＋中央の日付ラベル（最前面に重ねる）。
+            _fade = CreateImage("Fade", root, new Color(0f, 0f, 0f, 0f));
+            _fade.raycastTarget = false;
+            RectTransform fadeRect = _fade.rectTransform;
+            fadeRect.anchorMin = Vector2.zero;
+            fadeRect.anchorMax = Vector2.one;
+            fadeRect.offsetMin = Vector2.zero;
+            fadeRect.offsetMax = Vector2.zero;
+
+            _dayLabel = CreateText("DayLabel", root, 64, TextAnchor.MiddleCenter);
+            _dayLabel.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            _dayLabel.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            _dayLabel.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            _dayLabel.rectTransform.anchoredPosition = Vector2.zero;
+            _dayLabel.rectTransform.sizeDelta = new Vector2(600f, 120f);
 
             _gameOver = CreateText("GameOver", root, 40, TextAnchor.MiddleCenter);
             _gameOver.color = new Color(1f, 0.5f, 0.5f);

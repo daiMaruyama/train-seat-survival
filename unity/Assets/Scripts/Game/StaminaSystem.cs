@@ -11,8 +11,8 @@ namespace TrainSurvival.Game
     public sealed class StaminaSystem : MonoBehaviour
     {
         [SerializeField] private float _max = 100f;
-        [SerializeField] private float _drainPerSecond = 4f;
-        [SerializeField] private float _recoverPerSecond = 8f;
+        [SerializeField] private float _drainPerSecond = 3f;
+        [SerializeField] private float _recoverPerSecond = 1f;
 
         private PlayerSit _sit;
         private float _current;
@@ -22,6 +22,15 @@ namespace TrainSurvival.Game
         public float Normalized => _max <= 0f ? 0f : Mathf.Clamp01(_current / _max);
         public bool IsEmpty => _current <= 0f;
 
+        /// <summary>難度用の消耗倍率。乗り換えのたびに上がる（＝日が進むほどキツく、ランは必ず終わる）。</summary>
+        public float DrainMultiplier { get; set; } = 1f;
+
+        /// <summary>回復イベント（座れた日のご褒美など）。上限で頭打ち。</summary>
+        public void Restore(float amount)
+        {
+            _current = Mathf.Clamp(_current + amount, 0f, _max);
+        }
+
         private void Awake()
         {
             _sit = GetComponent<PlayerSit>();
@@ -30,7 +39,8 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
-            float perSecond = _sit != null && _sit.IsSeated ? _recoverPerSecond : -_drainPerSecond;
+            // 座っても回復は微々たるもの。立ちの消耗が主で、ランは長くは続かない。
+            float perSecond = _sit != null && _sit.IsSeated ? _recoverPerSecond : -_drainPerSecond * DrainMultiplier;
             _current = Mathf.Clamp(_current + perSecond * Time.deltaTime, 0f, _max);
         }
     }

@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -7,11 +8,10 @@ namespace TrainSurvival.Game
 {
     /// <summary>
     /// SEED で動く <see cref="CommuteWorld"/>（脳）と、物理的な車内（身体）をつなぐ司令塔。
-    /// 満員電車を再現する：開始時は全席が埋まり、通路には立ち客の群れがいて、各立ち客はどれかの席の
-    /// 前に陣取って空くのを待つ。着席客が降りると、その席を陣取っていた立ち客が座る（陣取りがいなければ
-    /// 近くの立ち客が座りに行く）＝空席はすぐ埋まる。乗客の「誰がいつ乗り降りするか」は Core が持ち、
-    /// ここは席・立ち客・着席といった物理的な振り分けだけを担う。
-    /// （※プレイヤーの割り込み＝ハイブリッドのダッシュ勝負は次の段。今は土台。）
+    /// 満員電車の椅子取りゲーム：開始時は全席が埋まり、通路の立ち客はどれかの席の前に陣取っている。
+    /// 着席客が降りて席が空くと、狙っていた立ち客が「一瞬迷ってから」歩いて座りに行く——その間は
+    /// 誰でも座れるので、プレイヤーが先に E で座れば勝ち（先に座った者勝ち）。空席は放っておけば
+    /// すぐ埋まる。乗客の「誰がいつ乗り降りするか」は Core が持ち、ここは席の取り合いの物理だけを担う。
     /// </summary>
     [RequireComponent(typeof(CarBuilder))]
     public sealed class CommuteDirector : MonoBehaviour
@@ -27,12 +27,17 @@ namespace TrainSurvival.Game
         {
             public Passenger Passenger;
             public PassengerActor Actor;
-            public int CampedSeat = -1; // 陣取っている席。-1 はうろつき
+            public int CampedSeat = -1;   // 陣取っている席。-1 はうろつき
+            public int IncomingSeat = -1; // いま座りに向かっている空席。-1 は待機中
         }
 
         [SerializeField] private int _seed = 12345;
         [SerializeField] private int _stationCount = 10;
         [SerializeField] private int _standeeCount = 28;
+        [SerializeField] private float _secondsPerStation = 8f;   // サクサク進行。1駅の長さ
+        [SerializeField] private float _drainRampPerLeg = 0.25f;  // 乗り換えごとの消耗倍率の伸び
+        [SerializeField] private float _takerHesitation = 0.45f; // 立ち客が空席に気づいてから動くまでの迷い＝プレイヤーの勝機（ギリ反応できる長さ）
+        [SerializeField] private float _sitReward = 40f;         // 座れた日のご褒美回復。消耗倍率の伸びに徐々に食われ、ランは必ず終わる
 
         private CarBuilder _car;
         private CommuteWorld _world;
@@ -45,8 +50,20 @@ namespace TrainSurvival.Game
         private readonly List<Standee> _standees = new List<Standee>();
         private readonly Dictionary<int, Standee> _standeeOf = new Dictionary<int, Standee>();
         private PlayerSit _player;
+        private Standee[] _incoming;     // 各空席へ座りに向かっている立ち客（いなければ null）
         private int _playerSeat = -1;
-        private int _playerClaim = -1;   // プレイヤーが予約している席（-1 は無し）
+        private float _stationTimer;
+        private bool _transitioning;     // 日替わり演出中は駅を進めない
+
+        /// <summary>日替わり演出の黒フェード濃度（0..1）。HudView が読んで描く。</summary>
+        public float TransitionAlpha { get; private set; }
+
+        /// <summary>日替わり演出中に出すラベル（「2日目」など）。HudView が読んで描く。</summary>
+        public string TransitionLabel { get; private set; } = "";
+        private int _leg;                // 何本目の電車か（乗り換え回数）
+
+        /// <summary>ラン全体で生き延びた駅数（スコア）。</summary>
+        public int TotalStationsSurvived { get; private set; }
 
         private void Awake()
         {
@@ -59,12 +76,21 @@ namespace TrainSurvival.Game
             _seatOccupant = new Passenger[seatCount];
             _seatView = new PassengerActor[seatCount];
             _camperOfSeat = new Standee[seatCount];
+            _incoming = new Standee[seatCount];
             _pool = new PassengerPool(transform);
             _player = FindFirstObjectByType<PlayerSit>();
 
+            SetupLeg(_seed);
+            _stationTimer = _secondsPerStation;
+        }
+
+        /// <summary>1本ぶんの電車（レグ）を満員状態で組む。乗り換えのたびに新しい seed で呼び直す。</summary>
+        private void SetupLeg(int seed)
+        {
+            int seatCount = _car.Seats.Count;
             int aboard = seatCount + _standeeCount;
             var config = new CommuteConfig { StationCount = _stationCount, PassengerCount = aboard };
-            _world = new CommuteWorld(_seed, config);
+            _world = new CommuteWorld(seed, config);
 
             IReadOnlyList<Passenger> roster = _world.Passengers;
             List<int> seatOrder = ShuffledSeatIndices(seatCount);
@@ -88,16 +114,32 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
+            if (Time.timeScale <= 0f || _transitioning)
+            {
+                return; // 倒れて停止中／日替わり演出中は駅を進めない
+            }
+
+            // 駅は自動で進む（サクサク）。Space はデバッグ用の早送り。
+            _stationTimer -= Time.deltaTime;
             Keyboard kb = Keyboard.current;
-            if (kb != null && kb.spaceKey.wasPressedThisFrame)
+            bool skip = kb != null && kb.spaceKey.wasPressedThisFrame;
+            if (_stationTimer <= 0f || skip)
             {
                 AdvanceStation();
+                _stationTimer = _secondsPerStation;
             }
         }
 
-        /// <summary>次の駅へ：降りる客を処理し（席が空けば立ち客が座る）、新しい客は立ち客として乗ってくる。</summary>
+        /// <summary>次の駅へ：降りる客を処理し（席が空けば立ち客が座る）、新しい客は立ち客として乗ってくる。終点なら乗り換え。</summary>
         private void AdvanceStation()
         {
+            if (_world.IsEndOfLine)
+            {
+                Transfer();
+                return;
+            }
+
+            TotalStationsSurvived++;
             StationChange change = _world.AdvanceToNextStation();
 
             foreach (Passenger p in change.Alighting)
@@ -121,6 +163,54 @@ namespace TrainSurvival.Game
                 Vector3 spot = camp >= 0 ? SeatFrontSpot(camp) : new Vector3(0f, StandY, door.z);
                 s.Actor.Travel(new List<Vector3> { new Vector3(0f, StandY, spot.z), spot }, null);
             }
+        }
+
+        /// <summary>
+        /// 乗り換え：終点で全員降ろして次の満員電車に乗り直す。プレイヤーは強制的に立たされ、予約も消える
+        /// （「座れば安泰」を崩す仕様の柱）。日が進むほど立ちの消耗が重くなり、ランは必ず終わる。
+        /// </summary>
+        private void Transfer()
+        {
+            _leg++;
+            ClearCar();
+
+            _playerSeat = -1;
+            if (_player != null)
+            {
+                _player.ResetForTransfer();
+                var stamina = _player.GetComponent<StaminaSystem>();
+                if (stamina != null)
+                {
+                    stamina.DrainMultiplier = 1f + _drainRampPerLeg * _leg;
+                }
+            }
+
+            SetupLeg(_seed + _leg);
+        }
+
+        /// <summary>車内の乗客を全撤去してプールへ返す（車両ジオメトリはそのまま）。</summary>
+        private void ClearCar()
+        {
+            // 座りに向かう途中の立ち客は _incoming を消せば各コルーチンのガードで自然に止まる
+            // （StopAllCoroutines は日替わり演出のコルーチン自身まで殺すので使わない）。
+            for (int i = 0; i < _seatView.Length; i++)
+            {
+                _incoming[i] = null;
+                if (_seatView[i] != null)
+                {
+                    _pool.Return(_seatView[i]);
+                    _seatView[i] = null;
+                }
+                _seatOccupant[i] = null;
+                _camperOfSeat[i] = null;
+            }
+            foreach (Standee s in _standees)
+            {
+                _pool.Return(s.Actor);
+            }
+            _standees.Clear();
+            _standeeOf.Clear();
+            _seatOfPassenger.Clear();
         }
 
         // --- 着席まわり -------------------------------------------------
@@ -153,36 +243,60 @@ namespace TrainSurvival.Game
             }
         }
 
-        /// <summary>空いた席を誰かが取る：陣取っていた立ち客、いなければ近くの立ち客。誰もいなければ空いたまま。</summary>
+        /// <summary>
+        /// 席が空いた：狙っていた立ち客（いなければ近くの立ち客）が座りに向かう。ただし迷い＋歩きの間は
+        /// 席は空いたままなので、プレイヤーが先に座れば横取りできる（椅子取りゲーム）。
+        /// </summary>
         private void ResolveOpening(int seat)
         {
-            // 予約していたプレイヤーが最優先で滑り込む。
-            if (_playerClaim == seat && _player != null)
+            Standee taker = _camperOfSeat[seat];
+            if (taker == null || taker.IncomingSeat >= 0)
             {
-                _playerClaim = -1;
-                _playerSeat = seat;
-                _player.SlideInto(_car.Seats[seat]);
-                return;
+                taker = NearestFreeStandee(SeatPosition(seat), TakeSeatRadius);
             }
-
-            Standee taker = _camperOfSeat[seat] ?? NearestStandee(SeatPosition(seat), TakeSeatRadius);
             if (taker == null)
             {
                 return;
             }
 
+            taker.IncomingSeat = seat;
+            _incoming[seat] = taker;
+            StartCoroutine(TakeSeatRoutine(seat, taker));
+        }
+
+        /// <summary>立ち客が空席に気づき、迷ってから歩いて座る。各段階でプレイヤーに取られたら中断。</summary>
+        private IEnumerator TakeSeatRoutine(int seat, Standee taker)
+        {
+            yield return new WaitForSeconds(_takerHesitation);
+            if (_incoming[seat] != taker || _seatOccupant[seat] != null || _playerSeat == seat)
+            {
+                yield break;
+            }
+
+            bool arrived = false;
+            taker.Actor.Travel(new List<Vector3> { SeatViewPosition(seat) }, () => arrived = true);
+            while (!arrived)
+            {
+                if (_incoming[seat] != taker || _playerSeat == seat)
+                {
+                    yield break;
+                }
+                yield return null;
+            }
+            if (_incoming[seat] != taker || _playerSeat == seat)
+            {
+                yield break;
+            }
+
+            _incoming[seat] = null;
+            taker.IncomingSeat = -1;
             DetachStandee(taker);
 
             _seatOccupant[seat] = taker.Passenger;
             _seatOfPassenger[taker.Passenger.Id] = seat;
-            PassengerActor actor = taker.Actor;
-            _seatView[seat] = actor;
-
-            actor.Travel(new List<Vector3> { SeatViewPosition(seat) }, () =>
-            {
-                actor.transform.localScale = SeatedScale;
-                actor.transform.SetPositionAndRotation(SeatViewPosition(seat), _car.Seats[seat].Facing);
-            });
+            _seatView[seat] = taker.Actor;
+            taker.Actor.transform.localScale = SeatedScale;
+            taker.Actor.Snap(SeatViewPosition(seat), _car.Seats[seat].Facing);
         }
 
         // --- 立ち客まわり -----------------------------------------------
@@ -232,12 +346,17 @@ namespace TrainSurvival.Game
             }
         }
 
-        private Standee NearestStandee(Vector3 pos, float radius)
+        /// <summary>まだどの空席にも向かっていない立ち客のうち、一番近い者。</summary>
+        private Standee NearestFreeStandee(Vector3 pos, float radius)
         {
             Standee best = null;
             float bestSqr = radius * radius;
             foreach (Standee s in _standees)
             {
+                if (s.IncomingSeat >= 0)
+                {
+                    continue;
+                }
                 float sqr = (s.Actor.transform.position - pos).sqrMagnitude;
                 if (sqr < bestSqr)
                 {
@@ -253,7 +372,7 @@ namespace TrainSurvival.Game
             var candidates = new List<int>();
             for (int i = 0; i < _camperOfSeat.Length; i++)
             {
-                if (_camperOfSeat[i] == null && _playerSeat != i && _playerClaim != i)
+                if (_camperOfSeat[i] == null && _playerSeat != i)
                 {
                     candidates.Add(i);
                 }
@@ -348,26 +467,103 @@ namespace TrainSurvival.Game
 
         public SeatAnchor GetSeat(int index) => _car.Seats[index];
 
-        public void SetPlayerSeat(int index) => _playerSeat = index;
-        public void ClearPlayerSeat() => _playerSeat = -1;
-
-        // プレイヤーの「予約（位置取り）」。埋まっていて、誰も陣取っていない席だけ予約できる。
-        public bool CanClaim(int seat)
+        /// <summary>プレイヤーが空席に座ろうとした。先に座れたら true（向かっていた立ち客は諦めて陣取り直す）。</summary>
+        public bool TryPlayerSit(int seat)
         {
-            return seat >= 0 && seat < _seatOccupant.Length
-                && _seatOccupant[seat] != null
-                && _camperOfSeat[seat] == null
-                && _playerSeat != seat;
+            if (!IsSeatGrabbable(seat))
+            {
+                return false;
+            }
+
+            Standee loser = _incoming[seat];
+            if (loser != null)
+            {
+                _incoming[seat] = null;
+                loser.IncomingSeat = -1;
+                ReCamp(loser);
+            }
+            _playerSeat = seat;
+
+            // 座れた＝この日は勝ち。余韻→日替わり演出→次の電車へ。
+            StartCoroutine(SeatedDayRoutine());
+            return true;
         }
 
-        public void SetPlayerClaim(int seat) => _playerClaim = seat;
-        public void ClearPlayerClaim() => _playerClaim = -1;
+        /// <summary>
+        /// 座れた日のクリア演出（仮）。ひと呼吸おいて黒フェード→「N日目」→次の満員電車。
+        /// ペルソナ風の日付転換はあとでブラッシュアップ前提のプレースホルダ。
+        /// </summary>
+        private IEnumerator SeatedDayRoutine()
+        {
+            _transitioning = true;
+            yield return new WaitForSeconds(1.0f); // 座れた余韻
+
+            for (float t = 0f; t < 1f; t += Time.deltaTime / 0.35f)
+            {
+                TransitionAlpha = Mathf.Clamp01(t);
+                yield return null;
+            }
+            TransitionAlpha = 1f;
+
+            Transfer(); // 日を進める：全員入れ替え・強制起立・消耗倍率アップ
+            var stamina = _player != null ? _player.GetComponent<StaminaSystem>() : null;
+            if (stamina != null)
+            {
+                stamina.Restore(_sitReward);
+            }
+            TransitionLabel = $"{_leg + 1}日目";
+            _stationTimer = _secondsPerStation;
+            yield return new WaitForSeconds(0.9f);
+
+            TransitionLabel = "";
+            for (float t = 1f; t > 0f; t -= Time.deltaTime / 0.35f)
+            {
+                TransitionAlpha = Mathf.Clamp01(t);
+                yield return null;
+            }
+            TransitionAlpha = 0f;
+            _transitioning = false;
+        }
+
+        /// <summary>プレイヤーが席を立った。空いた席はすぐ立ち客に狙われる。</summary>
+        public void PlayerVacated(int seat)
+        {
+            _playerSeat = -1;
+            if (seat >= 0)
+            {
+                ResolveOpening(seat);
+            }
+        }
+
+        /// <summary>席を取り損ねた（or 取られた）立ち客が、別の席の前へ陣取り直す。</summary>
+        private void ReCamp(Standee s)
+        {
+            if (s.CampedSeat >= 0 && _camperOfSeat[s.CampedSeat] == s)
+            {
+                _camperOfSeat[s.CampedSeat] = null;
+            }
+            int camp = FindUncampedSeat();
+            s.CampedSeat = camp;
+            if (camp >= 0)
+            {
+                _camperOfSeat[camp] = s;
+                Vector3 spot = SeatFrontSpot(camp);
+                s.Actor.Travel(new List<Vector3>
+                {
+                    new Vector3(0f, StandY, s.Actor.transform.position.z),
+                    new Vector3(0f, StandY, spot.z),
+                    spot,
+                }, null);
+            }
+        }
 
         public int CurrentStation => _world?.CurrentStation ?? 0;
         public int StationCount => _stationCount;
         public int Aboard => _world?.Passengers.Count ?? 0;
         public int FreeSeats => _seatOccupant == null ? 0 : CountFreeSeats();
         public bool IsEndOfLine => _world?.IsEndOfLine ?? false;
+        public int Leg => _leg;
+        public float SecondsToNextStation => Mathf.Max(0f, _stationTimer);
 
         private int CountFreeSeats()
         {
