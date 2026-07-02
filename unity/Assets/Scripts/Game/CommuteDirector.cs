@@ -16,11 +16,9 @@ namespace TrainSurvival.Game
     [RequireComponent(typeof(CarBuilder))]
     public sealed class CommuteDirector : MonoBehaviour
     {
-        private const float SeatedY = 0.55f;
-        private const float StandY = 0.9f;
+        private const float SeatedY = 0.44f; // 座面の上（ミニフィグの足元基準）
+        private const float StandY = 0f;     // 床（同上）
         private const float TakeSeatRadius = 3.5f;
-        private static readonly Vector3 SeatedScale = new Vector3(0.42f, 0.6f, 0.42f);
-        private static readonly Vector3 StandScale = new Vector3(0.42f, 1.0f, 0.42f);
 
         /// <summary>通路に立って、ある席の前で空くのを待っている乗客。</summary>
         private sealed class Standee
@@ -221,7 +219,7 @@ namespace TrainSurvival.Game
             _seatOfPassenger[p.Id] = seat;
 
             PassengerActor actor = _pool.Get();
-            actor.transform.localScale = SeatedScale;
+            actor.SetSeated(true);
             actor.Snap(SeatViewPosition(seat), _car.Seats[seat].Facing);
             _seatView[seat] = actor;
         }
@@ -238,7 +236,7 @@ namespace TrainSurvival.Game
             _seatView[seat] = null;
             if (actor != null)
             {
-                actor.transform.localScale = StandScale;
+                actor.SetSeated(false);
                 actor.Travel(WalkOutPath(seat), () => _pool.Return(actor));
             }
         }
@@ -295,7 +293,7 @@ namespace TrainSurvival.Game
             _seatOccupant[seat] = taker.Passenger;
             _seatOfPassenger[taker.Passenger.Id] = seat;
             _seatView[seat] = taker.Actor;
-            taker.Actor.transform.localScale = SeatedScale;
+            taker.Actor.SetSeated(true);
             taker.Actor.Snap(SeatViewPosition(seat), _car.Seats[seat].Facing);
         }
 
@@ -304,7 +302,7 @@ namespace TrainSurvival.Game
         private Standee SpawnStandee(Passenger p, int camp, Vector3 startPos)
         {
             PassengerActor actor = _pool.Get();
-            actor.transform.localScale = StandScale;
+            actor.SetSeated(false);
             actor.Snap(startPos, FacingTowardSeat(camp));
 
             var s = new Standee { Passenger = p, Actor = actor, CampedSeat = camp };

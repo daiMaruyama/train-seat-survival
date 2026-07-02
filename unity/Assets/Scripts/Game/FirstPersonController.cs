@@ -33,6 +33,7 @@ namespace TrainSurvival.Game
             _controller.height = 1.8f;
             _controller.radius = 0.3f;
             _controller.center = new Vector3(0f, 0.9f, 0f);
+            _controller.stepOffset = 0.2f; // 座面(高さ0.46m)へ乗り上がれない段差量にする
         }
 
         private void Start()
