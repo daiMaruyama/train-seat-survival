@@ -16,8 +16,8 @@ namespace TrainSurvival.Game
     [RequireComponent(typeof(CarBuilder))]
     public sealed class CommuteDirector : MonoBehaviour
     {
-        private const float SeatedY = 0.44f; // 座面の上（ミニフィグの足元基準）
-        private const float StandY = 0f;     // 床（同上）
+        private const float SeatedY = 0f; // 座り客のルートも床基準（座り姿勢はモーション側が腰高を持つ）
+        private const float StandY = 0f;  // 床
         private const float TakeSeatRadius = 3.5f;
 
         /// <summary>通路に立って、ある席の前で空くのを待っている乗客。</summary>
@@ -35,6 +35,12 @@ namespace TrainSurvival.Game
         [SerializeField] private float _secondsPerStation = 8f;   // サクサク進行。1駅の長さ
         [SerializeField] private float _drainRampPerLeg = 0.25f;  // 乗り換えごとの消耗倍率の伸び
         [SerializeField] private float _takerHesitation = 0.45f; // 立ち客が空席に気づいてから動くまでの迷い＝プレイヤーの勝機（ギリ反応できる長さ）
+
+        [Header("乗客チューニング（次の乗降・座り直しから反映）")]
+        [SerializeField] private float _passengerScale = 0.72f;   // 身長スケール（素モデル約2.5m→0.72で約1.8m）
+        [SerializeField] private float _passengerStandY = 0f;     // 立ちの上下微調整（＋で浮く）
+        [SerializeField] private float _passengerSitY = 0f;       // 座りの上下微調整（＋で浮く）
+        [SerializeField] private float _passengerSeatForward = 0.15f; // 座面中心→通路側の距離（−で深く）
         [SerializeField] private float _sitReward = 40f;         // 座れた日のご褒美回復。消耗倍率の伸びに徐々に食われ、ランは必ず終わる
 
         private CarBuilder _car;
@@ -125,6 +131,18 @@ namespace TrainSurvival.Game
             {
                 AdvanceStation();
                 _stationTimer = _secondsPerStation;
+            }
+
+            RefreshSeatHighlights();
+        }
+
+        /// <summary>空席（今すぐ座れる席）を常時light-upさせる。狙い色は PlayerSit がマーカーに直接付ける。</summary>
+        private void RefreshSeatHighlights()
+        {
+            IReadOnlyList<SeatMarker> markers = _car.Markers;
+            for (int i = 0; i < markers.Count; i++)
+            {
+                markers[i].SetAvailable(IsSeatGrabbable(i));
             }
         }
 
@@ -218,7 +236,7 @@ namespace TrainSurvival.Game
             _seatOccupant[seat] = p;
             _seatOfPassenger[p.Id] = seat;
 
-            PassengerActor actor = _pool.Get();
+            PassengerActor actor = GetConfiguredActor();
             actor.SetSeated(true);
             actor.Snap(SeatViewPosition(seat), _car.Seats[seat].Facing);
             _seatView[seat] = actor;
@@ -293,15 +311,28 @@ namespace TrainSurvival.Game
             _seatOccupant[seat] = taker.Passenger;
             _seatOfPassenger[taker.Passenger.Id] = seat;
             _seatView[seat] = taker.Actor;
-            taker.Actor.SetSeated(true);
+            taker.Actor.SeatForward = GetSeatForward(seat);
             taker.Actor.Snap(SeatViewPosition(seat), _car.Seats[seat].Facing);
+            taker.Actor.SetSeated(true, instant: false); // 歩いて来た流れから腰を下ろすモーションへ
         }
 
         // --- 立ち客まわり -----------------------------------------------
 
-        private Standee SpawnStandee(Passenger p, int camp, Vector3 startPos)
+        /// <summary>プールから取り出し、Inspector のチューニング値を注入してから着せ替える。</summary>
+        private PassengerActor GetConfiguredActor()
         {
             PassengerActor actor = _pool.Get();
+            actor.BaseScale = _passengerScale;
+            actor.StandYOffset = _passengerStandY;
+            actor.SitYOffset = _passengerSitY;
+            actor.SeatForward = _passengerSeatForward;
+            actor.RandomizeLook();
+            return actor;
+        }
+
+        private Standee SpawnStandee(Passenger p, int camp, Vector3 startPos)
+        {
+            PassengerActor actor = GetConfiguredActor();
             actor.SetSeated(false);
             actor.Snap(startPos, FacingTowardSeat(camp));
 
@@ -397,7 +428,13 @@ namespace TrainSurvival.Game
             }
             Vector3 p = _car.Seats[seat].Position;
             float sign = Mathf.Sign(p.x);
-            return new Vector3(sign * 0.7f, StandY, p.z);
+            return new Vector3(sign * 0.55f, StandY, p.z); // 吊り革ラインに立つ（座り客の膝ともぶつからない）
+        }
+
+        /// <summary>座るときの前方オフセット（座面中心→通路側）。全員一律＝横一列。小さいほど深く座る。</summary>
+        public float GetSeatForward(int seat)
+        {
+            return _passengerSeatForward;
         }
 
         private Quaternion FacingTowardSeat(int seat)

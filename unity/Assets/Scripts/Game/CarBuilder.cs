@@ -14,10 +14,11 @@ namespace TrainSurvival.Game
     public sealed class CarBuilder : MonoBehaviour
     {
         [SerializeField] private int[] _benchPattern = { 3, 7, 7, 7, 3 };
-        [SerializeField] private float _seatWidth = 0.46f;
+        [SerializeField] private float _seatWidth = 0.68f;   // 座り姿勢の膝の広がりがぶつからないピッチ
         [SerializeField] private float _doorWidth = 1.4f;
-        [SerializeField] private float _interiorWidth = 3.2f;
+        [SerializeField] private float _interiorWidth = 3.4f;
         [SerializeField] private float _wallHeight = 2.4f;
+        [SerializeField] private float _floorDrop = 0.16f;   // 床の上面の高さ＝-この値（Inspectorで微調整可）
 
         // ---- パレット（明るいフラットカラー。中央線イメージのオレンジを差し色に）----
         private static readonly Color WallColor = new Color(0.91f, 0.90f, 0.87f);
@@ -38,6 +39,7 @@ namespace TrainSurvival.Game
 
         private readonly List<SeatAnchor> _seats = new List<SeatAnchor>();
         private readonly List<Vector3> _doors = new List<Vector3>();
+        private readonly List<SeatMarker> _markers = new List<SeatMarker>();
 
         /// <summary>車内の全座席（組み立て順）。Awake 後に有効。</summary>
         public IReadOnlyList<SeatAnchor> Seats => _seats;
@@ -45,18 +47,23 @@ namespace TrainSurvival.Game
         /// <summary>各ドア前の通路点（乗客が現れる／出ていく場所）。</summary>
         public IReadOnlyList<Vector3> Doors => _doors;
 
+        /// <summary>座席インデックスと同順のマーカー（空席ハイライトの制御用）。</summary>
+        public IReadOnlyList<SeatMarker> Markers => _markers;
+
         private void Awake()
         {
             float length = ComputeLength();
             float halfL = length * 0.5f;
             float halfW = _interiorWidth * 0.5f;
 
-            // 床・天井・妻面（前後の壁）
-            CreateBlock("Floor", new Vector3(0f, -0.05f, 0f), new Vector3(_interiorWidth, 0.1f, length), FloorColor);
-            CreateBlock("FloorLine", new Vector3(0f, 0.005f, 0f), new Vector3(0.9f, 0.012f, length), FloorLineColor, withCollider: false);
+            // 床・天井・妻面（前後の壁）。床は -_floorDrop に下げ、壁はその分だけ下へ伸ばす
+            float wallCenterY = (_wallHeight - _floorDrop) * 0.5f;
+            float wallSpanY = _wallHeight + _floorDrop;
+            CreateBlock("Floor", new Vector3(0f, -_floorDrop - 0.05f, 0f), new Vector3(_interiorWidth, 0.1f, length), FloorColor);
+            CreateBlock("FloorLine", new Vector3(0f, -_floorDrop + 0.006f, 0f), new Vector3(0.9f, 0.012f, length), FloorLineColor, withCollider: false);
             CreateBlock("Ceiling", new Vector3(0f, _wallHeight + 0.04f, 0f), new Vector3(_interiorWidth, 0.08f, length), CeilingColor);
-            CreateBlock("Wall_Front", new Vector3(0f, _wallHeight * 0.5f, halfL), new Vector3(_interiorWidth, _wallHeight, 0.1f), WallColor);
-            CreateBlock("Wall_Back", new Vector3(0f, _wallHeight * 0.5f, -halfL), new Vector3(_interiorWidth, _wallHeight, 0.1f), WallColor);
+            CreateBlock("Wall_Front", new Vector3(0f, wallCenterY, halfL), new Vector3(_interiorWidth, wallSpanY, 0.1f), WallColor);
+            CreateBlock("Wall_Back", new Vector3(0f, wallCenterY, -halfL), new Vector3(_interiorWidth, wallSpanY, 0.1f), WallColor);
 
             BuildSide(-1, length, recordDoors: true);
             BuildSide(1, length, recordDoors: false);
@@ -73,7 +80,8 @@ namespace TrainSurvival.Game
             float backrestX = sign * (halfW - 0.12f);
             Quaternion facing = Quaternion.LookRotation(new Vector3(-sign, 0f, 0f));
 
-            CreateBlock($"Wall_{sign}", new Vector3(wallX, _wallHeight * 0.5f, 0f), new Vector3(0.1f, _wallHeight, length), WallColor);
+            CreateBlock($"Wall_{sign}", new Vector3(wallX, (_wallHeight - _floorDrop) * 0.5f, 0f),
+                new Vector3(0.1f, _wallHeight + _floorDrop, length), WallColor);
 
             float z = -length * 0.5f;
             for (int s = 0; s < _benchPattern.Length; s++)
@@ -87,8 +95,6 @@ namespace TrainSurvival.Game
                 Color cushion = priority ? PriorityCushion : CushionColor;
                 Color backrest = priority ? PriorityBackrest : BackrestColor;
 
-                CreateBlock($"Backrest_{sign}_{s}", new Vector3(backrestX, 0.75f, center),
-                    new Vector3(0.12f, 0.7f, segLen), backrest);
                 CreateBlock($"Window_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 1.55f, center),
                     new Vector3(0.05f, 0.6f, segLen - 0.15f), WindowColor, withCollider: false);
                 CreateBlock($"Rack_{sign}_{s}", new Vector3(sign * (halfW - 0.28f), 1.98f, center),
@@ -98,11 +104,16 @@ namespace TrainSurvival.Game
                 {
                     float cz = z + _seatWidth * (k + 0.5f);
                     GameObject cushionGo = CreateBlock($"Seat_{sign}_{s}_{k}", new Vector3(cushionX, 0.4f, cz),
-                        new Vector3(_seatWidth * 0.9f, 0.12f, 0.5f), cushion);
+                        new Vector3(_seatWidth * 0.9f, 0.12f, 0.5f), cushion); // 座面トップ0.46（乗客側が実測で尻を合わせる）
+                    // 背もたれも席ごとに分割（空席ハイライトを1席単位で光らせるため）
+                    GameObject backGo = CreateBlock($"Backrest_{sign}_{s}_{k}", new Vector3(backrestX, 0.75f, cz),
+                        new Vector3(0.12f, 0.7f, _seatWidth * 0.92f), backrest);
 
                     int index = _seats.Count;
-                    _seats.Add(new SeatAnchor(index, new Vector3(cushionX, 0f, cz), facing));
-                    CreateSeatTarget(index, new Vector3(cushionX, 0.7f, cz), cushionGo.GetComponent<Renderer>(), cushion);
+                    bool isBenchEnd = k == 0 || k == seats - 1;
+                    _seats.Add(new SeatAnchor(index, new Vector3(cushionX, 0f, cz), facing, isBenchEnd));
+                    CreateSeatTarget(index, new Vector3(cushionX, 0.7f, cz),
+                        cushionGo.GetComponent<Renderer>(), cushion, backGo.GetComponent<Renderer>(), backrest);
                 }
 
                 // ベンチ両端の握り棒（床から天井へ）
@@ -114,8 +125,8 @@ namespace TrainSurvival.Game
                 if (s < _benchPattern.Length - 1)
                 {
                     float dz = z + _doorWidth * 0.5f;
-                    CreateBlock($"Door_{sign}_{s}", new Vector3(wallX, 1.05f, dz),
-                        new Vector3(0.06f, 2.1f, _doorWidth - 0.1f), DoorColor);
+                    CreateBlock($"Door_{sign}_{s}", new Vector3(wallX, (2.1f - _floorDrop) * 0.5f, dz),
+                        new Vector3(0.06f, 2.1f + _floorDrop, _doorWidth - 0.1f), DoorColor);
                     CreateBlock($"DoorWindow_{sign}_{s}", new Vector3(wallX - sign * 0.035f, 1.45f, dz),
                         new Vector3(0.03f, 0.6f, _doorWidth * 0.6f), DoorWindowColor, withCollider: false);
                     CreateBlock($"DoorAccent_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 2.2f, dz),
@@ -155,13 +166,14 @@ namespace TrainSurvival.Game
         private void CreatePole(Vector3 floorPos)
         {
             CreateCylinder($"Pole_{floorPos.z:0.0}_{floorPos.x:0.0}",
-                new Vector3(floorPos.x, _wallHeight * 0.5f, floorPos.z),
-                Quaternion.identity, new Vector3(0.045f, _wallHeight * 0.5f, 0.045f), MetalColor,
+                new Vector3(floorPos.x, (_wallHeight - _floorDrop) * 0.5f, floorPos.z),
+                Quaternion.identity, new Vector3(0.045f, (_wallHeight + _floorDrop) * 0.5f, 0.045f), MetalColor,
                 withCollider: true);
         }
 
         /// <summary>座席を視線で狙うための見えないトリガー（isTrigger なので歩行は邪魔しない）。</summary>
-        private void CreateSeatTarget(int index, Vector3 position, Renderer cushionRenderer, Color baseColor)
+        private void CreateSeatTarget(int index, Vector3 position,
+            Renderer cushionRenderer, Color cushionBase, Renderer backrestRenderer, Color backrestBase)
         {
             var go = new GameObject($"SeatTarget_{index}");
             go.transform.SetParent(transform, false);
@@ -171,7 +183,9 @@ namespace TrainSurvival.Game
             box.isTrigger = true;
             box.size = new Vector3(0.5f, 1.4f, 0.6f);
 
-            go.AddComponent<SeatMarker>().Init(index, cushionRenderer, baseColor);
+            var marker = go.AddComponent<SeatMarker>();
+            marker.Init(index, cushionRenderer, cushionBase, backrestRenderer, backrestBase);
+            _markers.Add(marker);
         }
 
         private float ComputeLength()

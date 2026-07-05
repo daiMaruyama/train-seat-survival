@@ -5,93 +5,142 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 乗客の体（ミニフィグ）。胴カプセル＋頭＋髪の3パーツで、服・肌・髪の色をランダムに着せ替えて
-    /// 通勤客の群れを出す（コミカルなチビ頭身）。座り／立ちはパーツの高さで表現する。
-    /// 移動は従来どおり：短い経路（降車なら 席→通路→ドア、乗車なら ドア→通路→席）を歩き、
-    /// 到着時にコールバックを呼ぶ。ルートの位置 y は足元＝床である前提。
+    /// 乗客の体（「着席ブレンド版」＝評判の良かった構成）。
+    /// ・立ち＝Stand ステート（速度0）で静止／歩き＝Walk ループ（切替は即時）
+    /// ・座り＝歩いて来た乗客は SitDown（腰を下ろす動きの後半）を再生してから Sit（速度0・90%姿勢）で静止。
+    /// 　初期配置などは即 Sit。腕は LateUpdate で「肩→肘やや外→手は膝の上」の六角形補正（終盤にブレンドイン）
+    /// ・接地＝生成時にボーン実測（立ち：足首→床／座り：腰を座面中央・足首を床）＋ Director から渡される
+    /// 　微調整オフセット（Scale/StandY/SitY/SeatForward は Car の Inspector で編集可能）
     /// </summary>
     public sealed class PassengerActor : MonoBehaviour
     {
         [SerializeField] private float _speed = 2.6f;
+        [SerializeField] private float _sitStartTime = 0.75f; // 着席モーションの再生開始点(0..1)
+        [SerializeField] private float _sitTime = 0.9f;       // Sit で静止させる再生位置(0..1)
 
-        // ---- 着せ替えパレット（コミカル寄りのフラットカラー）----
-        private static readonly Color[] OutfitColors =
-        {
-            new Color(0.16f, 0.20f, 0.32f), // 紺スーツ
-            new Color(0.25f, 0.25f, 0.28f), // チャコール
-            new Color(0.45f, 0.32f, 0.24f), // ブラウン
-            new Color(0.55f, 0.58f, 0.62f), // グレー
-            new Color(0.20f, 0.33f, 0.25f), // 深緑
-            new Color(0.72f, 0.45f, 0.50f), // くすみピンク
-            new Color(0.35f, 0.50f, 0.65f), // 水色ジャケット
-            new Color(0.80f, 0.68f, 0.40f), // マスタード
-        };
+        // 座り姿勢の腕補正（総当たり最適化で決定）："六角形"
+        private const float SitLean = 8f;
+        private static readonly Vector3 SitArmL = new Vector3(20f, -10f, 10f);
+        private static readonly Vector3 SitArmR = new Vector3(20f, 10f, -10f);
+        private static readonly Vector3 SitForearmL = new Vector3(-42f, 45f, 0f);
+        private static readonly Vector3 SitForearmR = new Vector3(-42f, -45f, 0f);
 
-        private static readonly Color[] SkinColors =
-        {
-            new Color(0.96f, 0.80f, 0.68f),
-            new Color(0.90f, 0.72f, 0.58f),
-            new Color(0.76f, 0.57f, 0.44f),
-        };
+        // ---- Director（Car の Inspector）から注入されるチューニング ----
+        /// <summary>身長スケール（素のモデル約2.5m→0.72で約1.8m）。</summary>
+        public float BaseScale { get; set; } = 0.72f;
+        /// <summary>立ち姿勢の上下微調整（＋で浮く）。</summary>
+        public float StandYOffset { get; set; }
+        /// <summary>座り姿勢の上下微調整（＋で浮く）。</summary>
+        public float SitYOffset { get; set; }
+        /// <summary>座面中心から通路側へ尻を寄せる量。</summary>
+        public float SeatForward { get; set; } = 0.15f;
 
-        private static readonly Color[] HairColors =
-        {
-            new Color(0.12f, 0.10f, 0.10f), // 黒
-            new Color(0.25f, 0.17f, 0.12f), // 焦げ茶
-            new Color(0.45f, 0.32f, 0.20f), // 茶
-            new Color(0.65f, 0.65f, 0.66f), // 白髪
-        };
+        private Transform _visual;
+        private Animator _animator;
+        private Transform _spine, _hips, _foot, _armL, _armR, _foreL, _foreR;
+        private float _scale = 0.72f;
+        private Vector3 _sitAlignUnit;   // 座りポーズの腰x/z・足首yのズレ（スケール1あたり、生成時に実測）
+        private float _standAlignUnitY;  // 立ちポーズの足首の浮き（スケール1あたり）
 
-        private Transform _body;
-        private Transform _head;
-        private Transform _hair;
-        private Renderer _bodyRenderer;
-        private Renderer _headRenderer;
-        private Renderer _hairRenderer;
+        private bool _seated;
+        private bool _walking;
+        private bool _sittingDown;
+        private float _sitPoseWeight;
+        private float _swayPhase;
 
         private readonly Queue<Vector3> _path = new Queue<Vector3>();
         private Action _onArrive;
         private bool _moving;
 
-        /// <summary>パーツを組み立てる（プール生成時に1回だけ呼ぶ）。</summary>
-        public void BuildBody()
+        /// <summary>体を組み立てる（プール生成時に1回だけ）。プレハブが無ければカプセルで代用。</summary>
+        public void BuildBody(GameObject visualPrefab)
         {
-            _body = CreatePart(PrimitiveType.Capsule, "Body", out _bodyRenderer);
-            _head = CreatePart(PrimitiveType.Sphere, "Head", out _headRenderer);
-            _hair = CreatePart(PrimitiveType.Sphere, "Hair", out _hairRenderer);
+            if (visualPrefab != null)
+            {
+                GameObject go = Instantiate(visualPrefab, transform);
+                go.name = "Visual";
+                _visual = go.transform;
+                _scale = BaseScale;
+                _visual.localScale = Vector3.one * _scale;
+                _animator = go.GetComponent<Animator>();
+                if (_animator != null)
+                {
+                    _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; // 画面外でも姿勢を書き続ける
+                }
+                CacheBones();
+                CaptureAlignments();
+            }
+            else
+            {
+                GameObject go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                go.name = "Visual";
+                Destroy(go.GetComponent<Collider>());
+                go.transform.SetParent(transform, false);
+                go.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+                _visual = go.transform;
+            }
+
+            _swayPhase = UnityEngine.Random.value * 10f;
             SetSeated(false);
         }
 
-        /// <summary>服・肌・髪をランダムに着せ替える（プールから取り出すたびに呼ぶと群衆に見える）。</summary>
+        /// <summary>群衆の個体差：身長を少し変える。</summary>
         public void RandomizeLook()
         {
-            SetColor(_bodyRenderer, OutfitColors[UnityEngine.Random.Range(0, OutfitColors.Length)]);
-            SetColor(_headRenderer, SkinColors[UnityEngine.Random.Range(0, SkinColors.Length)]);
-            SetColor(_hairRenderer, HairColors[UnityEngine.Random.Range(0, HairColors.Length)]);
+            _scale = BaseScale * UnityEngine.Random.Range(0.94f, 1.05f);
+            if (_visual == null)
+            {
+                return;
+            }
+            _visual.localScale = Vector3.one * _scale;
+            if (_seated)
+            {
+                ApplySitAlignment();
+            }
+            else
+            {
+                ApplyStandAlignment();
+            }
         }
 
-        /// <summary>座り／立ちのポーズ切り替え（パーツの高さと胴の縮みで表現）。</summary>
-        public void SetSeated(bool seated)
+        /// <summary>座り／立ちの切り替え。instant=false なら腰を下ろすモーションを再生してから静止。</summary>
+        public void SetSeated(bool seated, bool instant = true)
         {
-            if (_body == null)
+            _seated = seated;
+            _walking = false;
+            _sittingDown = false;
+            if (_visual == null)
             {
                 return;
             }
 
             if (seated)
             {
-                _body.localScale = new Vector3(0.36f, 0.26f, 0.36f);
-                _body.localPosition = new Vector3(0f, 0.26f, 0f);
-                _head.localPosition = new Vector3(0f, 0.70f, 0f);
-                _hair.localPosition = new Vector3(0f, 0.82f, -0.05f);
+                ApplySitAlignment();
+                if (instant || _animator == null)
+                {
+                    _sitPoseWeight = 1f;
+                    if (_animator != null)
+                    {
+                        _animator.Play("Sit", 0, _sitTime);
+                        _animator.Update(0.0001f);
+                    }
+                }
+                else
+                {
+                    _sittingDown = true;
+                    _sitPoseWeight = 0f;
+                    _animator.CrossFade("SitDown", 0.25f, 0, _sitStartTime);
+                }
             }
             else
             {
-                // 立ち姿は座り客（座面のぶん高い）より頭が上に来る高さにする。
-                _body.localScale = new Vector3(0.36f, 0.56f, 0.36f);
-                _body.localPosition = new Vector3(0f, 0.56f, 0f);
-                _head.localPosition = new Vector3(0f, 1.30f, 0f);
-                _hair.localPosition = new Vector3(0f, 1.41f, -0.05f);
+                _sitPoseWeight = 0f;
+                ApplyStandAlignment();
+                if (_animator != null)
+                {
+                    _animator.Play("Stand", 0, 0f); // 速度0ステートなので姿勢は一切ズレない
+                }
             }
         }
 
@@ -116,11 +165,110 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
-            if (!_moving)
+            if (_moving)
+            {
+                Step();
+            }
+
+            if (_animator == null)
             {
                 return;
             }
 
+            // 着席モーション：座り切ったら Sit（静止）へ。腕補正は終盤にかけて効かせる
+            if (_sittingDown)
+            {
+                AnimatorStateInfo st = _animator.GetCurrentAnimatorStateInfo(0);
+                if (st.IsName("SitDown"))
+                {
+                    _sitPoseWeight = Mathf.Clamp01((st.normalizedTime - 0.82f) / 0.15f);
+                    if (st.normalizedTime >= 0.97f)
+                    {
+                        _sittingDown = false;
+                        _sitPoseWeight = 1f;
+                        _animator.Play("Sit", 0, _sitTime);
+                    }
+                }
+                return;
+            }
+
+            if (_seated)
+            {
+                return;
+            }
+
+            // 歩き出し／立ち止まり（このバージョンは即時切替）
+            if (_moving && !_walking)
+            {
+                _walking = true;
+                _animator.Play("Walk", 0, UnityEngine.Random.value); // 位相をずらして行進を防ぐ
+            }
+            else if (!_moving && _walking)
+            {
+                _walking = false;
+                _animator.Play("Stand", 0, 0f);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            // Animator の書き込みの後に、揺れと座り補正を重ねる（毎フレーム基準から掛けるので蓄積しない）
+            if (_spine == null)
+            {
+                return;
+            }
+
+            float t = Time.time + _swayPhase;
+            float sway = Mathf.Sin(t * 2.1f) * 1.2f + Mathf.Sin(t * 0.8f) * 0.8f;
+            float w = _sitPoseWeight;
+
+            if (w > 0.001f)
+            {
+                _spine.localRotation *= Quaternion.Euler(SitLean * w + sway * 0.5f, 0f, sway * 0.7f);
+                _armL.localRotation *= Quaternion.Euler(SitArmL * w);
+                _armR.localRotation *= Quaternion.Euler(SitArmR * w);
+                _foreL.localRotation *= Quaternion.Euler(SitForearmL * w);
+                _foreR.localRotation *= Quaternion.Euler(SitForearmR * w);
+            }
+            else
+            {
+                _spine.localRotation *= Quaternion.Euler(sway * 0.5f, 0f, sway * 0.7f);
+            }
+        }
+
+        /// <summary>生成時に立ち・座りポーズを一度サンプリングし、ボーンの位置ズレ（スケール1あたり）を実測する。</summary>
+        private void CaptureAlignments()
+        {
+            if (_animator == null || _hips == null || _foot == null)
+            {
+                return;
+            }
+
+            _animator.Play("Sit", 0, _sitTime);
+            _animator.Update(0.0001f);
+            Vector3 hipsLocal = transform.InverseTransformPoint(_hips.position);
+            Vector3 footLocal = transform.InverseTransformPoint(_foot.position);
+            _sitAlignUnit = new Vector3(-hipsLocal.x, -footLocal.y, -hipsLocal.z) / _scale;
+
+            _animator.Play("Stand", 0, 0f);
+            _animator.Update(0.0001f);
+            _standAlignUnitY = transform.InverseTransformPoint(_foot.position).y / _scale;
+        }
+
+        /// <summary>立ち姿勢：足首の浮きぶんだけ下げ、微調整 StandYOffset を足す。</summary>
+        private void ApplyStandAlignment()
+        {
+            _visual.localPosition = new Vector3(0f, -_standAlignUnitY * _scale + StandYOffset, 0f);
+        }
+
+        /// <summary>座り姿勢：足首を床へ・腰を座面中央へ、微調整 SitYOffset／SeatForward を足す。</summary>
+        private void ApplySitAlignment()
+        {
+            _visual.localPosition = _sitAlignUnit * _scale + new Vector3(0f, SitYOffset, SeatForward);
+        }
+
+        private void Step()
+        {
             Vector3 target = _path.Peek();
             Vector3 to = target - transform.position;
             float distance = to.magnitude;
@@ -148,30 +296,26 @@ namespace TrainSurvival.Game
             }
         }
 
-        private Transform CreatePart(PrimitiveType type, string partName, out Renderer renderer)
+        private void CacheBones()
         {
-            GameObject go = GameObject.CreatePrimitive(type);
-            go.name = partName;
-            go.transform.SetParent(transform, false);
-            Destroy(go.GetComponent<Collider>());
-            renderer = go.GetComponent<Renderer>();
-
-            if (type == PrimitiveType.Sphere)
+            foreach (Transform t in _visual.GetComponentsInChildren<Transform>())
             {
-                go.transform.localScale = partName == "Hair"
-                    ? new Vector3(0.25f, 0.13f, 0.26f) // 髪＝つぶした球をのせるだけ（頭より少し小さく）
-                    : new Vector3(0.28f, 0.28f, 0.28f);
+                switch (t.name)
+                {
+                    case "spine": _hips = t; break;
+                    case "spine.001": _spine = t; break;
+                    case "foot.L": _foot = t; break;
+                    case "upper_arm.L": _armL = t; break;
+                    case "upper_arm.R": _armR = t; break;
+                    case "forearm.L": _foreL = t; break;
+                    case "forearm.R": _foreR = t; break;
+                }
             }
-            return go.transform;
-        }
-
-        private static void SetColor(Renderer renderer, Color color)
-        {
-            Material material = renderer.material;
-            material.color = color;
-            if (material.HasProperty("_BaseColor"))
+            if (_spine == null || _hips == null || _foot == null
+                || _armL == null || _armR == null || _foreL == null || _foreR == null)
             {
-                material.SetColor("_BaseColor", color);
+                Debug.LogWarning("[PassengerActor] 想定ボーン（Rigify名）が見つからないため姿勢調整を無効化", this);
+                _spine = null;
             }
         }
     }

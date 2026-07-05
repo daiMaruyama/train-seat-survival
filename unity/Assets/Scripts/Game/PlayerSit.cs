@@ -84,12 +84,12 @@ namespace TrainSurvival.Game
             }
             if (_highlighted != null)
             {
-                _highlighted.SetHighlighted(false);
+                _highlighted.SetTargeted(false);
             }
             _highlighted = marker;
             if (_highlighted != null)
             {
-                _highlighted.SetHighlighted(true);
+                _highlighted.SetTargeted(true);
             }
         }
 
@@ -99,7 +99,9 @@ namespace TrainSurvival.Game
             Highlight(null);
 
             _seatIndex = seat.Index;
-            transform.SetPositionAndRotation(seat.Position, seat.Facing);
+            // 乗客と同じ前方オフセット（端0.15/中0.30）で座る＝頭が背もたれに刺さらない自然な位置
+            Vector3 pos = seat.Position + seat.Facing * Vector3.forward * _director.GetSeatForward(seat.Index);
+            transform.SetPositionAndRotation(pos, seat.Facing);
             if (_controller != null)
             {
                 _controller.CanMove = false;

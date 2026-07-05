@@ -582,10 +582,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.CarBuilder
   _benchPattern: 0300000007000000070000000700000003000000
-  _seatWidth: 0.45
+  _seatWidth: 0.68
   _doorWidth: 1.3
-  _interiorWidth: 2.8
+  _interiorWidth: 3.4
   _wallHeight: 2.4
+  _floorDrop: 0.16
 --- !u!4 &1419756272
 Transform:
   m_ObjectHideFlags: 0
@@ -617,8 +618,12 @@ MonoBehaviour:
   _stationCount: 10
   _standeeCount: 28
   _secondsPerStation: 8
-  _drainRampPerLeg: 0.25
-  _takerHesitation: 0.45
+  _drainRampPerLeg: 0.16
+  _takerHesitation: 0.63
+  _passengerScale: 0.72
+  _passengerStandY: 0
+  _passengerSitY: 0
+  _passengerSeatForward: 0.15
   _sitReward: 40
 --- !u!1 &1904752192
 GameObject:
