@@ -104,3 +104,17 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# 外部アセット（ストア/配布物はGit管理しない。導入方法はREADME参照）
+/[Aa]ssets/Floreswa/
+/[Aa]ssets/Floreswa.meta
+/[Aa]ssets/MoCapCentral/
+/[Aa]ssets/MoCapCentral.meta
+/[Aa]ssets/Zachary\ Kosma/
+/[Aa]ssets/Zachary\ Kosma.meta
+# 外部アセット由来のプレハブ（Floreswaから移動したもの）
+/[Aa]ssets/Resources/Passengers/
+/[Aa]ssets/Resources/Passengers.meta
+# 検証用スクリーンショット
+/[Aa]ssets/Screenshots/
+/[Aa]ssets/Screenshots.meta
