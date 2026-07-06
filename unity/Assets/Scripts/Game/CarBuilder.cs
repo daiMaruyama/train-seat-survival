@@ -103,8 +103,8 @@ namespace TrainSurvival.Game
                 for (int k = 0; k < seats; k++)
                 {
                     float cz = z + _seatWidth * (k + 0.5f);
-                    GameObject cushionGo = CreateBlock($"Seat_{sign}_{s}_{k}", new Vector3(cushionX, 0.4f, cz),
-                        new Vector3(_seatWidth * 0.9f, 0.12f, 0.5f), cushion); // 座面トップ0.46（乗客側が実測で尻を合わせる）
+                    GameObject cushionGo = CreateBlock($"Seat_{sign}_{s}_{k}", new Vector3(cushionX, 0.36f, cz),
+                        new Vector3(_seatWidth * 0.9f, 0.12f, _seatWidth * 0.92f), cushion); // 幅(z)は背もたれと同じ、中心0.36
                     // 背もたれも席ごとに分割（空席ハイライトを1席単位で光らせるため）
                     GameObject backGo = CreateBlock($"Backrest_{sign}_{s}_{k}", new Vector3(backrestX, 0.75f, cz),
                         new Vector3(0.12f, 0.7f, _seatWidth * 0.92f), backrest);
@@ -157,10 +157,76 @@ namespace TrainSurvival.Game
                 float z = start + spacing * i;
                 CreateBlock($"StrapBand_{sign}_{i}", new Vector3(x, railY - 0.09f, z),
                     new Vector3(0.03f, 0.14f, 0.01f), StrapColor, withCollider: false);
-                // 輪っかは薄い円盤で代用（スタイライズ表現）
-                CreateCylinder($"StrapRing_{sign}_{i}", new Vector3(x, railY - 0.20f, z),
-                    Quaternion.Euler(0f, 0f, 90f), new Vector3(0.075f, 0.006f, 0.075f), StrapColor);
+                // 輪っか＝本物と同じ穴あきリング（トーラスを手続き生成）
+                CreateStrapRing($"StrapRing_{sign}_{i}", new Vector3(x, railY - 0.20f, z));
             }
+        }
+
+        private Mesh _strapRingMesh;
+        private Material _strapRingMaterial;
+
+        /// <summary>吊り革の輪。プリミティブにトーラスは無いのでメッシュを一度だけ生成して全輪で共有する。</summary>
+        private void CreateStrapRing(string ringName, Vector3 position)
+        {
+            if (_strapRingMesh == null)
+            {
+                _strapRingMesh = BuildTorusMesh(0.0275f, 0.010f, 20, 10); // 外径≒従来の円盤(0.075)と同じ
+                _strapRingMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                _strapRingMaterial.color = StrapColor;
+                if (_strapRingMaterial.HasProperty("_BaseColor"))
+                {
+                    _strapRingMaterial.SetColor("_BaseColor", StrapColor);
+                }
+            }
+
+            var go = new GameObject(ringName);
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = position;
+            go.transform.localRotation = Quaternion.Euler(0f, 0f, 90f); // リング面を通路向きに
+            go.AddComponent<MeshFilter>().sharedMesh = _strapRingMesh;
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = _strapRingMaterial;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        /// <summary>トーラス（ドーナツ）メッシュ生成。radius=輪の半径、tube=管の太さ。</summary>
+        private static Mesh BuildTorusMesh(float radius, float tube, int segments, int sides)
+        {
+            var verts = new Vector3[(segments + 1) * (sides + 1)];
+            var norms = new Vector3[verts.Length];
+            var tris = new int[segments * sides * 6];
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float u = (float)i / segments * Mathf.PI * 2f;
+                Vector3 center = new Vector3(Mathf.Cos(u), 0f, Mathf.Sin(u)) * radius;
+                for (int j = 0; j <= sides; j++)
+                {
+                    float v = (float)j / sides * Mathf.PI * 2f;
+                    Vector3 dir = new Vector3(Mathf.Cos(u) * Mathf.Cos(v), Mathf.Sin(v), Mathf.Sin(u) * Mathf.Cos(v));
+                    int idx = i * (sides + 1) + j;
+                    verts[idx] = center + dir * tube;
+                    norms[idx] = dir;
+                }
+            }
+
+            int t = 0;
+            for (int i = 0; i < segments; i++)
+            {
+                for (int j = 0; j < sides; j++)
+                {
+                    int a = i * (sides + 1) + j;
+                    int b = a + sides + 1;
+                    tris[t++] = a; tris[t++] = b; tris[t++] = a + 1;
+                    tris[t++] = a + 1; tris[t++] = b; tris[t++] = b + 1;
+                }
+            }
+
+            var mesh = new Mesh();
+            mesh.vertices = verts;
+            mesh.normals = norms;
+            mesh.triangles = tris;
+            return mesh;
         }
 
         private void CreatePole(Vector3 floorPos)

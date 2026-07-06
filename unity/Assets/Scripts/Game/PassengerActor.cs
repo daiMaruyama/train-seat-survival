@@ -21,9 +21,9 @@ namespace TrainSurvival.Game
         // 座り姿勢の腕補正（総当たり最適化で決定）："六角形"
         private const float SitLean = 8f;
         private static readonly Vector3 SitArmL = new Vector3(20f, -10f, 10f);
-        private static readonly Vector3 SitArmR = new Vector3(20f, 10f, -10f);
+        private static readonly Vector3 SitArmR = new Vector3(20f, 10f, -20f);   // 右腕は左のミラーでは合わない（右手が左膝側へ食い込む）ため個別に最適化した値
         private static readonly Vector3 SitForearmL = new Vector3(-42f, 45f, 0f);
-        private static readonly Vector3 SitForearmR = new Vector3(-42f, -45f, 0f);
+        private static readonly Vector3 SitForearmR = new Vector3(-60f, -15f, 0f);
 
         // ---- Director（Car の Inspector）から注入されるチューニング ----
         /// <summary>身長スケール（素のモデル約2.5m→0.72で約1.8m）。</summary>
@@ -186,7 +186,8 @@ namespace TrainSurvival.Game
                     {
                         _sittingDown = false;
                         _sitPoseWeight = 1f;
-                        _animator.Play("Sit", 0, _sitTime);
+                        // 終端(0.97)と静止姿勢(0.9)は微妙に違うので、切らずにブレンドで馴染ませる
+                        _animator.CrossFade("Sit", 0.2f, 0, _sitTime);
                     }
                 }
                 return;

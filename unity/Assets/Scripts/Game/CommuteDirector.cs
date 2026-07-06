@@ -40,7 +40,7 @@ namespace TrainSurvival.Game
         [SerializeField] private float _passengerScale = 0.72f;   // 身長スケール（素モデル約2.5m→0.72で約1.8m）
         [SerializeField] private float _passengerStandY = 0f;     // 立ちの上下微調整（＋で浮く）
         [SerializeField] private float _passengerSitY = 0f;       // 座りの上下微調整（＋で浮く）
-        [SerializeField] private float _passengerSeatForward = 0.15f; // 座面中心→通路側の距離（−で深く）
+        [SerializeField] private float _passengerSeatForward = 0.11f; // 座面中心→通路側の距離（−で深く＝背もたれ寄り）
         [SerializeField] private float _sitReward = 40f;         // 座れた日のご褒美回復。消耗倍率の伸びに徐々に食われ、ランは必ず終わる
 
         private CarBuilder _car;
