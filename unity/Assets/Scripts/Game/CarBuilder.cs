@@ -20,7 +20,7 @@ namespace TrainSurvival.Game
         [SerializeField] private float _wallHeight = 2.4f;
         [SerializeField] private float _floorDrop = 0.16f;   // 床の上面の高さ＝-この値（Inspectorで微調整可）
 
-        // ---- パレット（明るいフラットカラー。中央線イメージのオレンジを差し色に）----
+        // ---- パレット ----
         private static readonly Color WallColor = new Color(0.91f, 0.90f, 0.87f);
         private static readonly Color CeilingColor = new Color(0.96f, 0.95f, 0.93f);
         private static readonly Color FloorColor = new Color(0.55f, 0.53f, 0.48f);
@@ -29,9 +29,7 @@ namespace TrainSurvival.Game
         private static readonly Color BackrestColor = new Color(0.13f, 0.27f, 0.48f);
         private static readonly Color PriorityCushion = new Color(0.48f, 0.34f, 0.66f);
         private static readonly Color PriorityBackrest = new Color(0.36f, 0.25f, 0.52f);
-        private static readonly Color WindowColor = new Color(0.66f, 0.83f, 0.94f);
         private static readonly Color DoorColor = new Color(0.78f, 0.77f, 0.74f);
-        private static readonly Color DoorWindowColor = new Color(0.70f, 0.86f, 0.95f);
         private static readonly Color AccentOrange = new Color(0.95f, 0.45f, 0.15f);
         private static readonly Color MetalColor = new Color(0.72f, 0.73f, 0.75f);
         private static readonly Color StrapColor = new Color(0.93f, 0.93f, 0.90f);
@@ -80,8 +78,13 @@ namespace TrainSurvival.Game
             float backrestX = sign * (halfW - 0.12f);
             Quaternion facing = Quaternion.LookRotation(new Vector3(-sign, 0f, 0f));
 
-            CreateBlock($"Wall_{sign}", new Vector3(wallX, (_wallHeight - _floorDrop) * 0.5f, 0f),
-                new Vector3(0.1f, _wallHeight + _floorDrop, length), WallColor);
+            // 窓帯(1.25〜1.85)だけ開口した壁：下帯＋上帯の2枚で組み、開口部にはガラスを張る
+            const float glassBottom = 1.25f;
+            const float glassTop = 1.85f;
+            CreateBlock($"Wall_{sign}_Low", new Vector3(wallX, (glassBottom - _floorDrop) * 0.5f, 0f),
+                new Vector3(0.1f, glassBottom + _floorDrop, length), WallColor);
+            CreateBlock($"Wall_{sign}_High", new Vector3(wallX, (glassTop + _wallHeight) * 0.5f, 0f),
+                new Vector3(0.1f, _wallHeight - glassTop, length), WallColor);
 
             float z = -length * 0.5f;
             for (int s = 0; s < _benchPattern.Length; s++)
@@ -95,8 +98,9 @@ namespace TrainSurvival.Game
                 Color cushion = priority ? PriorityCushion : CushionColor;
                 Color backrest = priority ? PriorityBackrest : BackrestColor;
 
-                CreateBlock($"Window_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 1.55f, center),
-                    new Vector3(0.05f, 0.6f, segLen - 0.15f), WindowColor, withCollider: false);
+                // 窓＝半透明ガラス（開口部に張る。外の景色が見える）
+                CreateGlass($"Window_{sign}_{s}", new Vector3(wallX, (glassBottom + glassTop) * 0.5f, center),
+                    new Vector3(0.05f, glassTop - glassBottom, segLen));
                 CreateBlock($"Rack_{sign}_{s}", new Vector3(sign * (halfW - 0.28f), 1.98f, center),
                     new Vector3(0.4f, 0.025f, segLen - 0.1f), RackColor, withCollider: false);
 
@@ -125,10 +129,28 @@ namespace TrainSurvival.Game
                 if (s < _benchPattern.Length - 1)
                 {
                     float dz = z + _doorWidth * 0.5f;
-                    CreateBlock($"Door_{sign}_{s}", new Vector3(wallX, (2.1f - _floorDrop) * 0.5f, dz),
-                        new Vector3(0.06f, 2.1f + _floorDrop, _doorWidth - 0.1f), DoorColor);
-                    CreateBlock($"DoorWindow_{sign}_{s}", new Vector3(wallX - sign * 0.035f, 1.45f, dz),
-                        new Vector3(0.03f, 0.6f, _doorWidth * 0.6f), DoorWindowColor, withCollider: false);
+                    // ドア＝窓部分をくり抜いた枠＋ガラス（外が見える）。壁より少し内側に配置してZファイト回避
+                    float doorX = wallX - sign * 0.03f;
+                    float dw = _doorWidth - 0.1f;
+                    float doorGlassW = dw * 0.55f;
+                    float frameW = (dw - doorGlassW) * 0.5f;
+                    const float doorWinB = 1.25f;
+                    const float doorWinT = 1.78f;
+                    float doorH = 2.1f + _floorDrop;
+                    float doorCenterY = (2.1f - _floorDrop) * 0.5f;
+                    // 左右の縦枠（全高）
+                    CreateBlock($"Door_{sign}_{s}_L", new Vector3(doorX, doorCenterY, dz - (doorGlassW + frameW) * 0.5f),
+                        new Vector3(0.06f, doorH, frameW), DoorColor);
+                    CreateBlock($"Door_{sign}_{s}_R", new Vector3(doorX, doorCenterY, dz + (doorGlassW + frameW) * 0.5f),
+                        new Vector3(0.06f, doorH, frameW), DoorColor);
+                    // 窓下・窓上のパネル
+                    CreateBlock($"Door_{sign}_{s}_Low", new Vector3(doorX, (doorWinB - _floorDrop) * 0.5f, dz),
+                        new Vector3(0.06f, doorWinB + _floorDrop, doorGlassW), DoorColor);
+                    CreateBlock($"Door_{sign}_{s}_High", new Vector3(doorX, (doorWinT + 2.1f) * 0.5f, dz),
+                        new Vector3(0.06f, 2.1f - doorWinT, doorGlassW), DoorColor);
+                    // ドアガラス
+                    CreateGlass($"DoorWindow_{sign}_{s}", new Vector3(doorX, (doorWinB + doorWinT) * 0.5f, dz),
+                        new Vector3(0.04f, doorWinT - doorWinB, doorGlassW));
                     CreateBlock($"DoorAccent_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 2.2f, dz),
                         new Vector3(0.03f, 0.12f, _doorWidth - 0.1f), AccentOrange, withCollider: false);
                     if (recordDoors)
@@ -164,6 +186,40 @@ namespace TrainSurvival.Game
 
         private Mesh _strapRingMesh;
         private Material _strapRingMaterial;
+        private Material _glassMaterial;
+
+        /// <summary>半透明ガラス板（コライダー無し）。マテリアルは1枚を全ガラスで共有。</summary>
+        private void CreateGlass(string glassName, Vector3 position, Vector3 size)
+        {
+            if (_glassMaterial == null)
+            {
+                var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                m.SetFloat("_Surface", 1f); // Transparent
+                m.SetOverrideTag("RenderType", "Transparent");
+                m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+                m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                m.SetFloat("_ZWrite", 0f);
+                m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                m.renderQueue = (int)RenderQueue.Transparent;
+                Color c = new Color(0.72f, 0.86f, 0.95f, 0.20f);
+                m.color = c;
+                if (m.HasProperty("_BaseColor"))
+                {
+                    m.SetColor("_BaseColor", c);
+                }
+                _glassMaterial = m;
+            }
+
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = glassName;
+            go.transform.SetParent(transform, false);
+            go.transform.localPosition = position;
+            go.transform.localScale = size;
+            Destroy(go.GetComponent<Collider>());
+            var renderer = go.GetComponent<Renderer>();
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.sharedMaterial = _glassMaterial;
+        }
 
         /// <summary>吊り革の輪。プリミティブにトーラスは無いのでメッシュを一度だけ生成して全輪で共有する。</summary>
         private void CreateStrapRing(string ringName, Vector3 position)
