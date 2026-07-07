@@ -587,6 +587,9 @@ MonoBehaviour:
   _interiorWidth: 3.4
   _wallHeight: 2.4
   _floorDrop: 0.1
+  _spawnCoffeeCups: 1
+  _coffeeCupHeight: 0.26
+  _coffeeFloatY: 1.05
 --- !u!4 &1419756272
 Transform:
   m_ObjectHideFlags: 0
@@ -657,7 +660,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f917a84de42c64160b8e27ad7c63ce4a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.Scenery
-  _nearSpeed: 9
+  _nearSpeed: 8
   _farSpeed: 3.5
   _loopLength: 90
   _nearDistance: 8
