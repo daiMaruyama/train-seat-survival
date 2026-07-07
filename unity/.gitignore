@@ -118,3 +118,9 @@ InitTestScene*.unity*
 # 検証用スクリーンショット
 /[Aa]ssets/Screenshots/
 /[Aa]ssets/Screenshots.meta
+
+# コーヒーカップの外部アセット（生の展開物＋整理コピー）。導入方法はREADME参照
+/[Aa]ssets/Coffee_Cup/
+/[Aa]ssets/Coffee_Cup.meta
+/[Aa]ssets/Resources/CoffeeCup/
+/[Aa]ssets/Resources/CoffeeCup.meta
