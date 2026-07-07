@@ -36,6 +36,11 @@ namespace TrainSurvival.Game
         [SerializeField] private float _drainRampPerLeg = 0.25f;  // 乗り換えごとの消耗倍率の伸び
         [SerializeField] private float _takerHesitation = 0.45f; // 立ち客が空席に気づいてから動くまでの迷い＝プレイヤーの勝機（ギリ反応できる長さ）
 
+        [Header("停車（駅サイクル）")]
+        [SerializeField] private float _stationDwell = 3.5f; // 停車時間（乗降が起きる）
+        [SerializeField] private float _brakeTime = 1.1f;    // 減速にかける時間
+        [SerializeField] private float _accelTime = 1.6f;    // 加速にかける時間
+
         [Header("乗客チューニング（次の乗降・座り直しから反映）")]
         [SerializeField] private float _passengerScale = 0.72f;   // 身長スケール（素モデル約2.5m→0.72で約1.8m）
         [SerializeField] private float _passengerStandY = 0f;     // 立ちの上下微調整（＋で浮く）
@@ -57,7 +62,15 @@ namespace TrainSurvival.Game
         private Standee[] _incoming;     // 各空席へ座りに向かっている立ち客（いなければ null）
         private int _playerSeat = -1;
         private float _stationTimer;
+        private float _trainSpeed = 1f;  // 電車の疑似速度(0..1)
+        private bool _atStation;         // 停車中（減速開始〜発車まで）
         private bool _transitioning;     // 日替わり演出中は駅を進めない
+
+        /// <summary>電車の疑似速度(0..1)。車窓スクロール（Scenery）が読む。</summary>
+        public float TrainSpeed01 => _trainSpeed;
+
+        /// <summary>停車中か（HUD 表示用）。</summary>
+        public bool IsAtStation => _atStation;
 
         /// <summary>日替わり演出の黒フェード濃度（0..1）。HudView が読んで描く。</summary>
         public float TransitionAlpha { get; private set; }
@@ -123,17 +136,38 @@ namespace TrainSurvival.Game
                 return; // 倒れて停止中／日替わり演出中は駅を進めない
             }
 
-            // 駅は自動で進む（サクサク）。Space はデバッグ用の早送り。
-            _stationTimer -= Time.deltaTime;
+            // 走行→減速→停車（ここで乗降）→加速、のサイクル。Space はデバッグ用の早送り。
             Keyboard kb = Keyboard.current;
             bool skip = kb != null && kb.spaceKey.wasPressedThisFrame;
-            if (_stationTimer <= 0f || skip)
+            if (!_atStation)
             {
-                AdvanceStation();
-                _stationTimer = _secondsPerStation;
+                _trainSpeed = Mathf.MoveTowards(_trainSpeed, 1f, Time.deltaTime / _accelTime); // 発車加速
+                _stationTimer -= Time.deltaTime;
+                if (_stationTimer <= 0f || skip)
+                {
+                    StartCoroutine(StationStopRoutine());
+                }
             }
 
             RefreshSeatHighlights();
+        }
+
+        /// <summary>駅到着：減速して停車→停車中に乗降（席の取り合いはここで起きる）→発車。</summary>
+        private IEnumerator StationStopRoutine()
+        {
+            _atStation = true;
+            while (_trainSpeed > 0.001f)
+            {
+                _trainSpeed = Mathf.MoveTowards(_trainSpeed, 0f, Time.deltaTime / _brakeTime);
+                yield return null;
+            }
+            _trainSpeed = 0f;
+
+            AdvanceStation(); // 降りる→席が空く→乗ってくる（すべて停車中）
+            yield return new WaitForSeconds(_stationDwell);
+
+            _stationTimer = _secondsPerStation;
+            _atStation = false; // Update 側で加速していく
         }
 
         /// <summary>空席（今すぐ座れる席）を常時light-upさせる。狙い色は PlayerSit がマーカーに直接付ける。</summary>

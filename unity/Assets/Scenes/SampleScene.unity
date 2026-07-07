@@ -273,7 +273,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!108 &410087040
 Light:
   m_ObjectHideFlags: 0
@@ -620,11 +620,64 @@ MonoBehaviour:
   _secondsPerStation: 6
   _drainRampPerLeg: 0.16
   _takerHesitation: 0.63
+  _stationDwell: 3.5
+  _brakeTime: 1.1
+  _accelTime: 1.6
   _passengerScale: 0.72
   _passengerStandY: 0
   _passengerSitY: 0
   _passengerSeatForward: 0.11
   _sitReward: 40
+--- !u!1 &1440874241
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1440874243}
+  - component: {fileID: 1440874242}
+  m_Layer: 0
+  m_Name: Scenery
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1440874242
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1440874241}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f917a84de42c64160b8e27ad7c63ce4a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.Scenery
+  _nearSpeed: 9
+  _farSpeed: 3.5
+  _loopLength: 90
+  _nearDistance: 8
+  _farDistance: 22
+  _buildingsPerLayer: 14
+--- !u!4 &1440874243
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1440874241}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1904752192
 GameObject:
   m_ObjectHideFlags: 0
@@ -679,3 +732,4 @@ SceneRoots:
   - {fileID: 1419756272}
   - {fileID: 1407492779}
   - {fileID: 1904752194}
+  - {fileID: 1440874243}

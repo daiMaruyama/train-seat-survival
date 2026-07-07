@@ -55,7 +55,8 @@ namespace TrainSurvival.Game
             if (_director != null)
             {
                 _info.text = $"{_director.Leg + 1}日目    駅 {_director.CurrentStation}/{_director.StationCount - 1}"
-                           + $"    生存 {_director.TotalStationsSurvived}駅    次の駅まで {_director.SecondsToNextStation:0}s";
+                           + $"    生存 {_director.TotalStationsSurvived}駅    "
+                           + (_director.IsAtStation ? "停車中" : $"次の駅まで {_director.SecondsToNextStation:0}s");
 
                 Color fadeColor = _fade.color;
                 fadeColor.a = _director.TransitionAlpha;
