@@ -19,6 +19,9 @@ namespace TrainSurvival.Game
         [SerializeField] private float _interiorWidth = 3.4f;
         [SerializeField] private float _wallHeight = 2.4f;
         [SerializeField] private float _floorDrop = 0.16f;   // 床の上面の高さ＝-この値（Inspectorで微調整可）
+        [SerializeField] private bool _spawnCoffeeCups = true;
+        [SerializeField] private float _coffeeCupHeight = 0.26f; // 見つけやすい大きさ
+        [SerializeField] private float _coffeeFloatY = 1.05f;    // 浮かせる高さ（胸元＝視界に入る）
 
         // ---- パレット ----
         private static readonly Color WallColor = new Color(0.91f, 0.90f, 0.87f);
@@ -67,6 +70,7 @@ namespace TrainSurvival.Game
             BuildSide(1, length, recordDoors: false);
             BuildHangingLine(-1, length);
             BuildHangingLine(1, length);
+            BuildCoffeeCups(length);
         }
 
         /// <summary>片側ぶんの壁・ベンチ・窓・ドア・ポール・網棚・座席アンカーを並べる。</summary>
@@ -291,6 +295,158 @@ namespace TrainSurvival.Game
                 new Vector3(floorPos.x, (_wallHeight - _floorDrop) * 0.5f, floorPos.z),
                 Quaternion.identity, new Vector3(0.045f, (_wallHeight + _floorDrop) * 0.5f, 0.045f), MetalColor,
                 withCollider: true);
+        }
+
+        private void BuildCoffeeCups(float length)
+        {
+            if (!_spawnCoffeeCups)
+            {
+                return;
+            }
+
+            GameObject prefab = Resources.Load<GameObject>("CoffeeCup/Coffee_Cup");
+            if (prefab == null)
+            {
+                Debug.LogWarning("CoffeeCup model was not found at Resources/CoffeeCup/Coffee_Cup.");
+                return;
+            }
+
+            // ドア前の通路に胸の高さで浮かせる（見下ろし不要・歩けば自然に視界へ入る）
+            for (int i = 0; i < _doors.Count; i++)
+            {
+                PlaceCoffeeCup(prefab, i, new Vector3(0f, _coffeeFloatY, _doors[i].z), i * 70f);
+            }
+        }
+
+        private void PlaceCoffeeCup(GameObject prefab, int index, Vector3 floorPosition, float yaw)
+        {
+            GameObject go = Instantiate(prefab, transform);
+            go.name = $"CoffeeCupItem_{index}";
+            go.transform.localPosition = floorPosition;
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+
+            UpgradeCoffeeMaterials(go);
+            NormalizeCoffeeSize(go);
+            SetCoffeeCenter(go, floorPosition); // 指定位置を見た目の中心に合わせる（浮遊配置）
+            EnsureCoffeeItemCollider(go);
+        }
+
+        private void NormalizeCoffeeSize(GameObject go)
+        {
+            if (_coffeeCupHeight <= 0f || !TryGetRenderBounds(go, out Bounds bounds) || bounds.size.y <= 0.0001f)
+            {
+                return;
+            }
+
+            float scale = _coffeeCupHeight / bounds.size.y;
+            go.transform.localScale *= scale;
+        }
+
+        private static void SetCoffeeCenter(GameObject go, Vector3 targetLocal)
+        {
+            if (!TryGetRenderBounds(go, out Bounds bounds))
+            {
+                return;
+            }
+
+            // モデルのピボットずれを吸収し、見た目の中心を狙った位置へ
+            go.transform.localPosition += targetLocal - bounds.center;
+        }
+
+        private static void EnsureCoffeeItemCollider(GameObject go)
+        {
+            if (go.GetComponent<CoffeeCupItem>() == null)
+            {
+                go.AddComponent<CoffeeCupItem>();
+            }
+
+            if (!TryGetRenderBounds(go, out Bounds bounds))
+            {
+                return;
+            }
+
+            var box = go.GetComponent<BoxCollider>();
+            if (box == null)
+            {
+                box = go.AddComponent<BoxCollider>();
+            }
+
+            Vector3 lossy = go.transform.lossyScale;
+            box.isTrigger = true; // 触れたら自動で飲む（CoffeeCupItem.OnTriggerEnter）
+            box.center = go.transform.InverseTransformPoint(bounds.center);
+            box.size = new Vector3(
+                Mathf.Max(0.12f, bounds.size.x / Mathf.Max(0.0001f, Mathf.Abs(lossy.x))),
+                Mathf.Max(0.12f, bounds.size.y / Mathf.Max(0.0001f, Mathf.Abs(lossy.y))),
+                Mathf.Max(0.12f, bounds.size.z / Mathf.Max(0.0001f, Mathf.Abs(lossy.z)))) * 1.6f;
+        }
+
+        private static bool TryGetRenderBounds(GameObject go, out Bounds bounds)
+        {
+            Renderer[] renderers = go.GetComponentsInChildren<Renderer>();
+            bounds = default;
+            bool found = false;
+            foreach (Renderer renderer in renderers)
+            {
+                if (!found)
+                {
+                    bounds = renderer.bounds;
+                    found = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+            }
+            return found;
+        }
+
+        private static void UpgradeCoffeeMaterials(GameObject go)
+        {
+            Shader lit = Shader.Find("Universal Render Pipeline/Lit");
+            if (lit == null)
+            {
+                return;
+            }
+
+            foreach (Renderer renderer in go.GetComponentsInChildren<Renderer>())
+            {
+                Material[] materials = renderer.materials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    Material source = materials[i];
+                    if (source == null || source.shader == lit)
+                    {
+                        continue;
+                    }
+
+                    Texture texture = source.HasProperty("_MainTex") ? source.GetTexture("_MainTex") : source.mainTexture;
+                    Color color = source.HasProperty("_Color") ? source.color : Color.white;
+                    float metallic = source.HasProperty("_Metallic") ? source.GetFloat("_Metallic") : 0f;
+                    float smoothness = source.HasProperty("_Glossiness") ? source.GetFloat("_Glossiness") : 0.35f;
+
+                    var upgraded = new Material(lit);
+                    upgraded.name = $"{source.name}_URP";
+                    if (texture != null && upgraded.HasProperty("_BaseMap"))
+                    {
+                        upgraded.SetTexture("_BaseMap", texture);
+                    }
+                    if (upgraded.HasProperty("_BaseColor"))
+                    {
+                        upgraded.SetColor("_BaseColor", color);
+                    }
+                    if (upgraded.HasProperty("_Metallic"))
+                    {
+                        upgraded.SetFloat("_Metallic", metallic);
+                    }
+                    if (upgraded.HasProperty("_Smoothness"))
+                    {
+                        upgraded.SetFloat("_Smoothness", smoothness);
+                    }
+                    materials[i] = upgraded;
+                }
+                renderer.materials = materials;
+            }
         }
 
         /// <summary>座席を視線で狙うための見えないトリガー（isTrigger なので歩行は邪魔しない）。</summary>
