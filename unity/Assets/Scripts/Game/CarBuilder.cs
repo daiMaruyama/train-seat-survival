@@ -41,6 +41,7 @@ namespace TrainSurvival.Game
         private readonly List<SeatAnchor> _seats = new List<SeatAnchor>();
         private readonly List<Vector3> _doors = new List<Vector3>();
         private readonly List<SeatMarker> _markers = new List<SeatMarker>();
+        private readonly List<Renderer> _doorRenderers = new List<Renderer>();
 
         /// <summary>車内の全座席（組み立て順）。Awake 後に有効。</summary>
         public IReadOnlyList<SeatAnchor> Seats => _seats;
@@ -50,6 +51,18 @@ namespace TrainSurvival.Game
 
         /// <summary>座席インデックスと同順のマーカー（空席ハイライトの制御用）。</summary>
         public IReadOnlyList<SeatMarker> Markers => _markers;
+
+        /// <summary>ドアを視覚的に開閉する。コライダーは残すので車外へは出られない。</summary>
+        public void SetDoorsOpen(bool open)
+        {
+            for (int i = 0; i < _doorRenderers.Count; i++)
+            {
+                if (_doorRenderers[i] != null)
+                {
+                    _doorRenderers[i].enabled = !open;
+                }
+            }
+        }
 
         private void Awake()
         {
@@ -143,20 +156,20 @@ namespace TrainSurvival.Game
                     float doorH = 2.1f + _floorDrop;
                     float doorCenterY = (2.1f - _floorDrop) * 0.5f;
                     // 左右の縦枠（全高）
-                    CreateBlock($"Door_{sign}_{s}_L", new Vector3(doorX, doorCenterY, dz - (doorGlassW + frameW) * 0.5f),
-                        new Vector3(0.06f, doorH, frameW), DoorColor);
-                    CreateBlock($"Door_{sign}_{s}_R", new Vector3(doorX, doorCenterY, dz + (doorGlassW + frameW) * 0.5f),
-                        new Vector3(0.06f, doorH, frameW), DoorColor);
+                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_L", new Vector3(doorX, doorCenterY, dz - (doorGlassW + frameW) * 0.5f),
+                        new Vector3(0.06f, doorH, frameW), DoorColor));
+                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_R", new Vector3(doorX, doorCenterY, dz + (doorGlassW + frameW) * 0.5f),
+                        new Vector3(0.06f, doorH, frameW), DoorColor));
                     // 窓下・窓上のパネル
-                    CreateBlock($"Door_{sign}_{s}_Low", new Vector3(doorX, (doorWinB - _floorDrop) * 0.5f, dz),
-                        new Vector3(0.06f, doorWinB + _floorDrop, doorGlassW), DoorColor);
-                    CreateBlock($"Door_{sign}_{s}_High", new Vector3(doorX, (doorWinT + 2.1f) * 0.5f, dz),
-                        new Vector3(0.06f, 2.1f - doorWinT, doorGlassW), DoorColor);
+                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_Low", new Vector3(doorX, (doorWinB - _floorDrop) * 0.5f, dz),
+                        new Vector3(0.06f, doorWinB + _floorDrop, doorGlassW), DoorColor));
+                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_High", new Vector3(doorX, (doorWinT + 2.1f) * 0.5f, dz),
+                        new Vector3(0.06f, 2.1f - doorWinT, doorGlassW), DoorColor));
                     // ドアガラス
-                    CreateGlass($"DoorWindow_{sign}_{s}", new Vector3(doorX, (doorWinB + doorWinT) * 0.5f, dz),
-                        new Vector3(0.04f, doorWinT - doorWinB, doorGlassW));
-                    CreateBlock($"DoorAccent_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 2.2f, dz),
-                        new Vector3(0.03f, 0.12f, _doorWidth - 0.1f), AccentOrange, withCollider: false);
+                    RegisterDoorPart(CreateGlass($"DoorWindow_{sign}_{s}", new Vector3(doorX, (doorWinB + doorWinT) * 0.5f, dz),
+                        new Vector3(0.04f, doorWinT - doorWinB, doorGlassW)));
+                    RegisterDoorPart(CreateBlock($"DoorAccent_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 2.2f, dz),
+                        new Vector3(0.03f, 0.12f, _doorWidth - 0.1f), AccentOrange, withCollider: false));
                     if (recordDoors)
                     {
                         _doors.Add(new Vector3(0f, 0f, dz));
@@ -193,7 +206,7 @@ namespace TrainSurvival.Game
         private Material _glassMaterial;
 
         /// <summary>半透明ガラス板（コライダー無し）。マテリアルは1枚を全ガラスで共有。</summary>
-        private void CreateGlass(string glassName, Vector3 position, Vector3 size)
+        private GameObject CreateGlass(string glassName, Vector3 position, Vector3 size)
         {
             if (_glassMaterial == null)
             {
@@ -223,6 +236,16 @@ namespace TrainSurvival.Game
             var renderer = go.GetComponent<Renderer>();
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.sharedMaterial = _glassMaterial;
+            return go;
+        }
+
+        private void RegisterDoorPart(GameObject go)
+        {
+            Renderer renderer = go != null ? go.GetComponent<Renderer>() : null;
+            if (renderer != null)
+            {
+                _doorRenderers.Add(renderer);
+            }
         }
 
         /// <summary>吊り革の輪。プリミティブにトーラスは無いのでメッシュを一度だけ生成して全輪で共有する。</summary>

@@ -187,6 +187,7 @@ namespace TrainSurvival.Game
             }
 
             IsConsumed = true;
+            GameAudio.Instance.Play(GameAudio.Sfx.Coffee);
             stamina.Restore(_staminaRestore);
             Destroy(gameObject);
             return true;

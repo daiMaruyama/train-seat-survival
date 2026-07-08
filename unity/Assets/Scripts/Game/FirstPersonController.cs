@@ -26,6 +26,17 @@ namespace TrainSurvival.Game
         /// <summary>false の間は歩行を止める（例：着席中）。見回しはそのまま効く。</summary>
         public bool CanMove { get; set; } = true;
 
+        /// <summary>乗り換えなどで位置を戻すとき、前日の視線角度を引きずらないよう正面へ戻す。</summary>
+        public void ResetLook(float yawDegrees = 0f)
+        {
+            _pitch = 0f;
+            transform.rotation = Quaternion.Euler(0f, yawDegrees, 0f);
+            if (_camera != null)
+            {
+                _camera.localRotation = Quaternion.identity;
+            }
+        }
+
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();

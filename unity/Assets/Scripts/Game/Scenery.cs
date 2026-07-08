@@ -34,6 +34,7 @@ namespace TrainSurvival.Game
         };
         private static readonly Color GroundColor = new Color(0.35f, 0.37f, 0.34f);
         private static readonly Color FarTintMul = new Color(1.12f, 1.12f, 1.18f); // 遠景は空気遠近で薄く
+        private static readonly Color WindowColor = new Color(1f, 0.86f, 0.50f, 0.88f);
 
         private sealed class Layer
         {
@@ -111,10 +112,48 @@ namespace TrainSurvival.Game
                     m.SetColor("_BaseColor", c);
                 }
                 _materials.Add(m);
+                AddWindows(go.transform, side, width, height, depth);
 
                 layer.Buildings.Add(go.transform);
             }
             _layers.Add(layer);
+        }
+
+        private void AddWindows(Transform building, int side, float width, float height, float depth)
+        {
+            int rows = Mathf.Clamp(Mathf.FloorToInt(height / 1.1f), 2, 9);
+            int cols = Mathf.Clamp(Mathf.FloorToInt(depth / 0.9f), 2, 7);
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    if ((r + c) % 3 == 0)
+                    {
+                        continue;
+                    }
+
+                    GameObject win = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    win.name = $"Win_{r}_{c}";
+                    win.transform.SetParent(building, false);
+                    float y = -0.36f + (r + 0.5f) / rows * 0.72f;
+                    float z = -0.38f + (c + 0.5f) / cols * 0.76f;
+                    win.transform.localPosition = new Vector3(-side * 0.505f, y, z);
+                    win.transform.localScale = new Vector3(0.025f / width, 0.22f / height, 0.34f / depth);
+                    Destroy(win.GetComponent<Collider>());
+
+                    var renderer = win.GetComponent<Renderer>();
+                    renderer.shadowCastingMode = ShadowCastingMode.Off;
+                    Material material = renderer.material;
+                    Color color = WindowColor;
+                    color.a *= Random.Range(0.55f, 1f);
+                    material.color = color;
+                    if (material.HasProperty("_BaseColor"))
+                    {
+                        material.SetColor("_BaseColor", color);
+                    }
+                    _materials.Add(material);
+                }
+            }
         }
 
         /// <summary>ループで戻ってきたビルの高さだけ引き直す（色まで変えるとチカチカするので据え置き）。</summary>

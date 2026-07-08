@@ -132,3 +132,9 @@ InitTestScene*.unity*
 # 使用中のモーキャプ2クリップ（MoCapCentral由来の外部アセット。本体は削除済み）
 /[Aa]ssets/Animations/
 /[Aa]ssets/Animations.meta
+
+# 効果音・BGMの外部素材
+/[Aa]ssets/Audio/
+/[Aa]ssets/Audio.meta
+/[Aa]ssets/Resources/Audio/
+/[Aa]ssets/Resources/Audio.meta

@@ -41,12 +41,22 @@ namespace TrainSurvival.Game
         [SerializeField] private float _brakeTime = 1.1f;    // 減速にかける時間
         [SerializeField] private float _accelTime = 1.6f;    // 加速にかける時間
 
+        [Header("音素材（未設定なら GameAudio の合成音）")]
+        [SerializeField] private AudioClip _arriveClip;
+        [SerializeField] private AudioClip _bellClip;
+        [SerializeField] private AudioClip _trainDepartureClip;
+        [SerializeField] private AudioClip _trainStopClip;
+        [SerializeField] private AudioClip _hornClip;
+        [SerializeField] private AudioClip _heartClip;
+        [SerializeField] private Vector2 _hornIntervalRange = new Vector2(8f, 18f);
+
         [Header("乗客チューニング（次の乗降・座り直しから反映）")]
         [SerializeField] private float _passengerScale = 0.72f;   // 身長スケール（素モデル約2.5m→0.72で約1.8m）
         [SerializeField] private float _passengerStandY = 0f;     // 立ちの上下微調整（＋で浮く）
         [SerializeField] private float _passengerSitY = 0f;       // 座りの上下微調整（＋で浮く）
         [SerializeField] private float _passengerSeatForward = 0.11f; // 座面中心→通路側の距離（−で深く＝背もたれ寄り）
         [SerializeField] private float _sitReward = 40f;         // 座れた日のご褒美回復。消耗倍率の伸びに徐々に食われ、ランは必ず終わる
+        [SerializeField] private float _playerBoardingY = 0.2f;  // CharacterController の足元が床へ自然に乗る高さ
 
         private CarBuilder _car;
         private CommuteWorld _world;
@@ -65,6 +75,7 @@ namespace TrainSurvival.Game
         private float _trainSpeed = 1f;  // 電車の疑似速度(0..1)
         private bool _atStation;         // 停車中（減速開始〜発車まで）
         private bool _transitioning;     // 日替わり演出中は駅を進めない
+        private float _hornTimer;
 
         /// <summary>電車の疑似速度(0..1)。車窓スクロール（Scenery）が読む。</summary>
         public float TrainSpeed01 => _trainSpeed;
@@ -93,9 +104,12 @@ namespace TrainSurvival.Game
             _pool = new PassengerPool(transform);
             _player = FindFirstObjectByType<PlayerSit>();
             _cutIn = FindFirstObjectByType<CutInView>();
+            RegisterAudioClips();
 
             SetupLeg(_seed);
+            MovePlayerToDoorFront();
             _stationTimer = _secondsPerStation;
+            ResetHornTimer();
         }
 
         /// <summary>1本ぶんの電車（レグ）を満員状態で組む。乗り換えのたびに新しい seed で呼び直す。</summary>
@@ -139,6 +153,7 @@ namespace TrainSurvival.Game
             if (!_atStation)
             {
                 _trainSpeed = Mathf.MoveTowards(_trainSpeed, 1f, Time.deltaTime / _accelTime); // 発車加速
+                MaybePlayHorn();
                 _stationTimer -= Time.deltaTime;
                 if (_stationTimer <= 0f || skip)
                 {
@@ -153,18 +168,69 @@ namespace TrainSurvival.Game
         private IEnumerator StationStopRoutine()
         {
             _atStation = true;
+            GameAudio.Instance.Play(GameAudio.Sfx.TrainStop, Random.Range(0.96f, 1.04f));
             while (_trainSpeed > 0.001f)
             {
                 _trainSpeed = Mathf.MoveTowards(_trainSpeed, 0f, Time.deltaTime / _brakeTime);
                 yield return null;
             }
             _trainSpeed = 0f;
+            float stopTail = ClipTail(_trainStopClip, _brakeTime, 0.25f, 1.2f);
+            if (stopTail > 0f)
+            {
+                yield return new WaitForSeconds(stopTail);
+            }
+            GameAudio.Instance.Play(GameAudio.Sfx.Arrive); // 到着音＋環境音
+            _car.SetDoorsOpen(true);
 
             AdvanceStation(); // 降りる→席が空く→乗ってくる（すべて停車中）
             yield return new WaitForSeconds(_stationDwell);
 
+            GameAudio.Instance.Play(GameAudio.Sfx.Bell); // 発車ベル＋ドア
+            float bellWait = ClipWait(_bellClip, 0.9f, 3.2f);
+            float closeDelay = Mathf.Min(0.7f, bellWait * 0.35f);
+            yield return new WaitForSeconds(closeDelay);
+            _car.SetDoorsOpen(false);
+            yield return new WaitForSeconds(Mathf.Max(0f, bellWait - closeDelay));
+            GameAudio.Instance.Play(GameAudio.Sfx.TrainDeparture, Random.Range(0.98f, 1.03f)); // 電車発車
             _stationTimer = _secondsPerStation;
             _atStation = false; // Update 側で加速していく
+            ResetHornTimer();
+        }
+
+        private void RegisterAudioClips()
+        {
+            GameAudio audio = GameAudio.Instance;
+            audio.RegisterClip(GameAudio.Sfx.Arrive, _arriveClip);
+            audio.RegisterClip(GameAudio.Sfx.Bell, _bellClip);
+            audio.RegisterClip(GameAudio.Sfx.TrainDeparture, _trainDepartureClip);
+            audio.RegisterClip(GameAudio.Sfx.TrainStop, _trainStopClip);
+            audio.RegisterClip(GameAudio.Sfx.Horn, _hornClip);
+            audio.RegisterClip(GameAudio.Sfx.Heart, _heartClip);
+        }
+
+        private void MaybePlayHorn()
+        {
+            if (_trainSpeed < 0.35f)
+            {
+                return;
+            }
+
+            _hornTimer -= Time.deltaTime;
+            if (_hornTimer > 0f)
+            {
+                return;
+            }
+
+            GameAudio.Instance.Play(GameAudio.Sfx.Horn, Random.Range(0.92f, 1.08f));
+            ResetHornTimer();
+        }
+
+        private void ResetHornTimer()
+        {
+            float min = Mathf.Max(1f, Mathf.Min(_hornIntervalRange.x, _hornIntervalRange.y));
+            float max = Mathf.Max(min, Mathf.Max(_hornIntervalRange.x, _hornIntervalRange.y));
+            _hornTimer = Random.Range(min, max);
         }
 
         /// <summary>空席（今すぐ座れる席）を常時light-upさせる。狙い色は PlayerSit がマーカーに直接付ける。</summary>
@@ -180,6 +246,11 @@ namespace TrainSurvival.Game
         /// <summary>次の駅へ：降りる客を処理し（席が空けば立ち客が座る）、新しい客は立ち客として乗ってくる。終点なら乗り換え。</summary>
         private void AdvanceStation()
         {
+            if (!EnsureWorld())
+            {
+                return;
+            }
+
             if (_world.IsEndOfLine)
             {
                 Transfer();
@@ -212,6 +283,23 @@ namespace TrainSurvival.Game
             }
         }
 
+        private bool EnsureWorld()
+        {
+            if (_world != null)
+            {
+                return true;
+            }
+
+            if (_car == null || _car.Seats.Count == 0 || _seatOccupant == null || _pool == null)
+            {
+                return false;
+            }
+
+            ClearCar();
+            SetupLeg(_seed + _leg);
+            return _world != null;
+        }
+
         /// <summary>
         /// 乗り換え：終点で全員降ろして次の満員電車に乗り直す。プレイヤーは強制的に立たされ、予約も消える
         /// （「座れば安泰」を崩す仕様の柱）。日が進むほど立ちの消耗が重くなり、ランは必ず終わる。
@@ -230,9 +318,55 @@ namespace TrainSurvival.Game
                 {
                     stamina.DrainMultiplier = 1f + _drainRampPerLeg * _leg;
                 }
+                MovePlayerToDoorFront();
             }
 
             SetupLeg(_seed + _leg);
+        }
+
+        /// <summary>開始時・乗り換え時のプレイヤー初期位置。前日座った席に残さず、ドア前の通路へ戻す。</summary>
+        private void MovePlayerToDoorFront()
+        {
+            if (_player == null)
+            {
+                return;
+            }
+
+            IReadOnlyList<Vector3> doors = _car.Doors;
+            float z = doors.Count > 0 ? doors[Mathf.Abs(_leg) % doors.Count].z : 0f;
+            Vector3 position = new Vector3(0f, _playerBoardingY, z);
+            Quaternion rotation = Quaternion.identity;
+
+            var controller = _player.GetComponent<CharacterController>();
+            bool wasEnabled = controller != null && controller.enabled;
+            if (controller != null)
+            {
+                controller.enabled = false;
+            }
+            _player.transform.SetPositionAndRotation(position, rotation);
+            var fpc = _player.GetComponent<FirstPersonController>();
+            if (fpc != null)
+            {
+                fpc.ResetLook();
+            }
+            if (controller != null)
+            {
+                controller.enabled = wasEnabled;
+            }
+        }
+
+        private static float ClipWait(AudioClip clip, float fallback, float max)
+        {
+            return clip != null ? Mathf.Min(max, Mathf.Max(fallback, clip.length)) : fallback;
+        }
+
+        private static float ClipTail(AudioClip clip, float alreadyPlayed, float overlap, float max)
+        {
+            if (clip == null)
+            {
+                return 0f;
+            }
+            return Mathf.Min(max, Mathf.Max(0f, clip.length - alreadyPlayed - overlap));
         }
 
         /// <summary>車内の乗客を全撤去してプールへ返す（車両ジオメトリはそのまま）。</summary>
@@ -551,6 +685,7 @@ namespace TrainSurvival.Game
             _playerSeat = seat;
 
             // 座れた＝この日は勝ち。余韻→日替わり演出→次の電車へ。
+            GameAudio.Instance.Play(GameAudio.Sfx.Sit); // 座れた！
             StartCoroutine(SeatedDayRoutine());
             return true;
         }

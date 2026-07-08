@@ -55,6 +55,7 @@ namespace TrainSurvival.Game
         private void Die()
         {
             IsOver = true;
+            GameAudio.Instance.Play(GameAudio.Sfx.GameOver);
             Cursor.lockState = CursorLockMode.None;
 
             int days = _director != null ? _director.Leg + 1 : 1;

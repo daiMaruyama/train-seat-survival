@@ -466,7 +466,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.FirstPersonController
   _moveSpeed: 3.2
-  _lookSensitivity: 0.08
+  _lookSensitivity: 0.2
   _eyeHeight: 1.5
   _gravity: -12
   _pitchLimit: 80
@@ -539,6 +539,7 @@ MonoBehaviour:
   _max: 100
   _drainPerSecond: 3
   _recoverPerSecond: 1
+  _dangerHeartbeatThreshold: 0.25
 --- !u!114 &1407492782
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -627,11 +628,19 @@ MonoBehaviour:
   _stationDwell: 3.5
   _brakeTime: 1.1
   _accelTime: 1.6
+  _arriveClip: {fileID: 0}
+  _bellClip: {fileID: 0}
+  _trainDepartureClip: {fileID: 0}
+  _trainStopClip: {fileID: 0}
+  _hornClip: {fileID: 0}
+  _heartClip: {fileID: 0}
+  _hornIntervalRange: {x: 8, y: 18}
   _passengerScale: 0.72
   _passengerStandY: 0
   _passengerSitY: 0
   _passengerSeatForward: 0.11
   _sitReward: 40
+  _playerBoardingY: 0.2
 --- !u!1 &1440874241
 GameObject:
   m_ObjectHideFlags: 0
