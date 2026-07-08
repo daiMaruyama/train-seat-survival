@@ -128,3 +128,7 @@ InitTestScene*.unity*
 # フォント（外部配布物。導入方法はREADME参照。無い場合は内蔵フォントにフォールバック）
 /[Aa]ssets/Resources/Fonts/
 /[Aa]ssets/Resources/Fonts.meta
+
+# 使用中のモーキャプ2クリップ（MoCapCentral由来の外部アセット。本体は削除済み）
+/[Aa]ssets/Animations/
+/[Aa]ssets/Animations.meta
