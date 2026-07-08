@@ -355,6 +355,7 @@ MonoBehaviour:
   _gameSceneName: InGame
   _dropClip: {fileID: 8993902097722301239, guid: bf737ec5f8ed42b4983d49d91bad81f9, type: 3}
   _collapsedLoopClip: {fileID: 8993902097722301239, guid: e6f544c2218b6ac45a5fd050f031a403, type: 3}
+  _getUpClip: {fileID: 8993902097722301239, guid: 1cc56d4331abd8248a8297eb1e68a1b8, type: 3}
   _arriveClip: {fileID: 0}
   _bellClip: {fileID: 0}
   _trainDepartureClip: {fileID: 0}

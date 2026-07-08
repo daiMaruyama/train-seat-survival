@@ -10,20 +10,28 @@ using UnityEngine.UI;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// タイトル画面。InGame と同じ車内・フォント・落ち着いた配色を使いつつ、
-    /// 斜め帯と強い文字組みで少しだけ派手にする。
+    /// タイトル画面「座れ！サラリーマン！」。
+    /// ・背景は実際の車内＋車窓を流用し、席で力尽きて寝落ちしたサラリーマンを画面右手に主役として据える
+    /// ・文字組みは駅サイン調の落ち着いた配色（紺／クリーム／差し色オレンジ）で、蛍光マーカー風の
+    /// 　ハイライト帯を一度だけ横に走らせて“強さ”を出す。常時揺れる装飾は置かない
+    /// ・スタート導線（ボタン＋ENTER/SPACE）、BGM/SE 音量スライダー、下段のLED運行案内
+    /// ・倒れ込む本格アニメは削除済みモーキャップに依存するため、_dropClip を割り当てれば差し替わる。
+    /// 　未割り当てのときは着席ポーズ＋首のうとうと運動でフォールバックする
     /// </summary>
     public sealed class TitleController : MonoBehaviour
     {
-        private static readonly Color Cover = new Color(0.03f, 0.035f, 0.05f, 0.56f);
-        private static readonly Color CardBg = new Color(0.05f, 0.06f, 0.10f, 0.72f);
+        private static readonly Color BgNavy = new Color(0.04f, 0.05f, 0.08f);
+        private static readonly Color Vignette = new Color(0.02f, 0.025f, 0.04f, 0.55f);
+        private static readonly Color CardBg = new Color(0.05f, 0.06f, 0.10f, 0.80f);
         private static readonly Color AccentOrange = new Color(0.95f, 0.45f, 0.15f);
-        private static readonly Color Paper = new Color(0.94f, 0.93f, 0.89f);
-        private static readonly Color Ink = new Color(0.12f, 0.13f, 0.17f);
+        private static readonly Color Amber = new Color(1f, 0.72f, 0.34f);
 
         [SerializeField] private string _gameSceneName = "InGame";
+
+        [Header("倒れ込みアニメ（再インポート後に割り当てると主役が差し替わる）")]
         [SerializeField] private AnimationClip _dropClip;
         [SerializeField] private AnimationClip _collapsedLoopClip;
+        [SerializeField] private AnimationClip _getUpClip;
 
         [Header("音素材")]
         [SerializeField] private AudioClip _arriveClip;
@@ -35,11 +43,30 @@ namespace TrainSurvival.Game
         private Camera _camera;
         private Transform _cameraTransform;
         private Animator _commuterAnimator;
-        private RectTransform _slashA;
-        private RectTransform _slashB;
-        private RectTransform _trainBand;
+        private GameObject _commuterRoot;
+        private Vector3 _commuterBasePosition;
+        private Quaternion _commuterBaseRotation;
+        private AnimatorOverrideController _commuterOverrideController;
+        private AnimationClip _mainActionOriginalClip;
+        private readonly List<KeyValuePair<AnimationClip, AnimationClip>> _clipOverrides = new List<KeyValuePair<AnimationClip, AnimationClip>>();
+        private Transform _headBone;
+        private Transform _spineBone;
+        private Quaternion _headBaseLocal;
+        private Quaternion _spineBaseLocal;
+        private bool _hasDropClip;
+
+        private CanvasGroup _titleGroup;
+        private RectTransform _titleGroupRect;
+        private CanvasGroup _startGroup;
+        private RectTransform _highlight;
+        private float _highlightWidth;
+        private RectTransform _ticker;
+        private RectTransform _startButton;
+        private RectTransform _rankingButton;
         private CanvasGroup _fade;
+
         private Vector3 _cameraBasePosition;
+        private bool _startHover;
         private bool _loading;
 
         private void Start()
@@ -50,34 +77,67 @@ namespace TrainSurvival.Game
 
             RegisterAudioClips();
             BuildWorld();
-            BuildUi();
             ConfigureCamera();
+            BuildUi();
 
             GameAudio.Instance.Play(GameAudio.Sfx.Arrive, 0.98f);
-            StartCoroutine(CommuterLoop());
+            StartCoroutine(EntranceRoutine());
+            StartCoroutine(AmbientHornRoutine());
         }
 
         private void Update()
         {
             float t = Time.unscaledTime;
-            if (_slashA != null)
+
+            // LED運行案内のスクロール
+            if (_ticker != null)
             {
-                _slashA.anchoredPosition = new Vector2(Mathf.Sin(t * 1.8f) * 28f, 0f);
-                _slashB.anchoredPosition = new Vector2(Mathf.Sin(t * 1.2f + 1.6f) * 36f, -40f);
+                _ticker.anchoredPosition = new Vector2(-Mathf.Repeat(t * 90f, 1600f), 0f);
             }
-            if (_trainBand != null)
-            {
-                _trainBand.anchoredPosition = new Vector2(Mathf.Repeat(t * 120f, 420f) - 210f, 0f);
-            }
+
+            // ごく浅いカメラの呼吸（酔わない範囲）
             if (_cameraTransform != null)
             {
-                _cameraTransform.position = _cameraBasePosition + new Vector3(Mathf.Sin(t * 0.9f) * 0.018f, Mathf.Sin(t * 1.4f) * 0.012f, 0f);
+                _cameraTransform.position = _cameraBasePosition
+                    + new Vector3(Mathf.Sin(t * 0.7f) * 0.015f, Mathf.Sin(t * 1.1f) * 0.010f, 0f);
+            }
+
+            // スタートボタンをそっと脈打たせる
+            if (_startButton != null)
+            {
+                float hoverScale = _startHover ? 1.055f : 1f;
+                float pulse = hoverScale * (1f + 0.024f * Mathf.Sin(t * 3.2f));
+                _startButton.localScale = new Vector3(pulse, pulse, 1f);
             }
 
             Keyboard kb = Keyboard.current;
-            if (!_loading && kb != null && (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
+            if (!_loading && kb != null &&
+                (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
             {
                 StartGame();
+            }
+        }
+
+        /// <summary>着席ポーズの上に「うとうと」の首・背の揺れを重ねる（Animator の後に上書き）。</summary>
+        private void LateUpdate()
+        {
+            if (_hasDropClip)
+            {
+                return; // 本物の倒れ込みアニメがあるならそちらに任せる
+            }
+
+            float t = Time.unscaledTime;
+            if (_headBone != null)
+            {
+                // こくり…と落ちる周期的なうなずき＋わずかな横揺れ
+                float nod = 14f + 10f * Mathf.Sin(t * 0.9f);
+                float tilt = 5f * Mathf.Sin(t * 0.6f + 1f);
+                _headBone.localRotation = _headBaseLocal * Quaternion.Euler(nod, tilt, tilt * 0.6f);
+            }
+            if (_spineBone != null)
+            {
+                float slump = 8f + 3f * Mathf.Sin(t * 0.9f); // 呼吸に合わせて前へ落ちる
+                _spineBone.localRotation = _spineBaseLocal * Quaternion.Euler(slump, 0f, 0f);
             }
         }
 
@@ -91,6 +151,11 @@ namespace TrainSurvival.Game
             _loading = true;
             GameAudio.Instance.Play(GameAudio.Sfx.Bell);
             StartCoroutine(LoadRoutine());
+        }
+
+        private void ShowRankingPlaceholder()
+        {
+            GameAudio.Instance.Play(GameAudio.Sfx.Ding, 0.92f);
         }
 
         private IEnumerator LoadRoutine()
@@ -109,21 +174,45 @@ namespace TrainSurvival.Game
             SceneManager.LoadScene(_gameSceneName);
         }
 
-        private IEnumerator CommuterLoop()
+        // ---- 入場演出：タイトルが決まり、マーカーが走る -------------------
+
+        private IEnumerator EntranceRoutine()
         {
-            if (_commuterAnimator == null)
+            _titleGroup.alpha = 0f;
+            _startGroup.alpha = 0f;
+            if (_highlight != null)
             {
-                yield break;
+                _highlight.sizeDelta = new Vector2(0f, _highlight.sizeDelta.y);
             }
 
-            while (true)
+            // タイトルがスッと決まる（左からわずかに寄って止まる）
+            yield return Animate(0.5f, p =>
             {
-                _commuterAnimator.Play("SitDown", 0, 0f);
-                GameAudio.Instance.Play(GameAudio.Sfx.GameOver, 0.9f);
-                float dropDuration = _dropClip != null ? Mathf.Max(2.2f, _dropClip.length) : 2.8f;
-                yield return new WaitForSeconds(dropDuration);
-                _commuterAnimator.CrossFade("Walk", 0.25f, 0, 0f);
-                yield return new WaitForSeconds(1.8f);
+                _titleGroup.alpha = p;
+                _titleGroupRect.anchoredPosition = new Vector2(Mathf.Lerp(-48f, 0f, EaseOutCubic(p)), _titleGroupRect.anchoredPosition.y);
+            });
+
+            // 蛍光マーカーが横に一度だけ走る
+            if (_highlight != null)
+            {
+                yield return Animate(0.32f, p =>
+                    _highlight.sizeDelta = new Vector2(_highlightWidth * EaseOutCubic(p), _highlight.sizeDelta.y));
+            }
+
+            // スタート導線がふわっと出る
+            yield return Animate(0.4f, p => _startGroup.alpha = p);
+        }
+
+        private IEnumerator AmbientHornRoutine()
+        {
+            // 遠くのクラクションをたまに鳴らして駅の空気を出す
+            while (!_loading)
+            {
+                yield return new WaitForSeconds(Random.Range(6f, 12f));
+                if (!_loading)
+                {
+                    GameAudio.Instance.Play(GameAudio.Sfx.Horn, Random.Range(0.85f, 1.05f));
+                }
             }
         }
 
@@ -137,6 +226,8 @@ namespace TrainSurvival.Game
             audio.RegisterClip(GameAudio.Sfx.Horn, _hornClip);
         }
 
+        // ---- 3D 背景（車内＋主役サラリーマン） -----------------------------
+
         private void BuildWorld()
         {
             var carGo = new GameObject("TitleCar");
@@ -146,26 +237,31 @@ namespace TrainSurvival.Game
             sceneryGo.AddComponent<Scenery>();
 
             SpawnCommuter();
-            SpawnBriefcase();
-            SpawnFloorShadows();
         }
 
         private void SpawnCommuter()
         {
+            bool useDropPerformance = _dropClip != null;
+            Vector3 basePos = useDropPerformance ? new Vector3(0f, 0f, 0.08f) : new Vector3(1.4f, 0.30f, 0.15f);
+            Quaternion baseRot = useDropPerformance ? Quaternion.Euler(0f, 0f, 0f) : Quaternion.Euler(0f, -90f, 0f);
+
             GameObject prefab = Resources.Load<GameObject>("Passengers/male02_1");
             if (prefab == null)
             {
                 GameObject fallback = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 fallback.name = "TitleSalaryman_Fallback";
-                fallback.transform.position = new Vector3(0.08f, 0.65f, -0.75f);
-                fallback.transform.localScale = new Vector3(0.42f, 0.78f, 0.42f);
+                fallback.transform.SetPositionAndRotation(basePos + Vector3.up * 0.35f, baseRot);
+                fallback.transform.localScale = new Vector3(0.42f, 0.6f, 0.42f);
                 return;
             }
 
             GameObject commuter = Instantiate(prefab);
             commuter.name = "TitleSalaryman";
-            commuter.transform.SetPositionAndRotation(new Vector3(0.12f, -0.02f, -0.72f), Quaternion.Euler(0f, 168f, 0f));
+            commuter.transform.SetPositionAndRotation(basePos, baseRot);
             commuter.transform.localScale = Vector3.one * 0.72f;
+            _commuterRoot = commuter;
+            _commuterBasePosition = basePos;
+            _commuterBaseRotation = baseRot;
 
             _commuterAnimator = commuter.GetComponent<Animator>();
             if (_commuterAnimator == null)
@@ -175,7 +271,63 @@ namespace TrainSurvival.Game
 
             _commuterAnimator.applyRootMotion = false;
             _commuterAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-            OverrideCommuterClips(_commuterAnimator);
+
+            _hasDropClip = useDropPerformance;
+            if (_hasDropClip)
+            {
+                OverrideCommuterClips(_commuterAnimator);
+                StartCoroutine(CollapsePerformanceRoutine());
+            }
+            else
+            {
+                // 着席ポーズで固定し、うとうと運動は LateUpdate で重ねる
+                _commuterAnimator.Play("Sit", 0, 0.5f);
+                _headBone = _commuterAnimator.GetBoneTransform(HumanBodyBones.Head);
+                _spineBone = _commuterAnimator.GetBoneTransform(HumanBodyBones.Spine);
+                if (_headBone != null)
+                {
+                    _headBaseLocal = _headBone.localRotation;
+                }
+                if (_spineBone != null)
+                {
+                    _spineBaseLocal = _spineBone.localRotation;
+                }
+            }
+        }
+
+        private IEnumerator CollapsePerformanceRoutine()
+        {
+            yield return null;
+
+            while (!_loading && _commuterAnimator != null)
+            {
+                if (_commuterRoot != null)
+                {
+                    _commuterRoot.transform.SetPositionAndRotation(_commuterBasePosition, _commuterBaseRotation);
+                }
+
+                SetMainActionClip(_dropClip);
+                _commuterAnimator.Play("SitDown", 0, 0f);
+                GameAudio.Instance.Play(GameAudio.Sfx.GameOver, 0.86f);
+                yield return new WaitForSeconds(Mathf.Max(1.6f, ClipLength(_dropClip)));
+
+                if (_collapsedLoopClip != null)
+                {
+                    _commuterAnimator.CrossFade("Walk", 0.18f, 0, 0f);
+                    yield return new WaitForSeconds(1.35f);
+                }
+
+                if (_getUpClip != null)
+                {
+                    SetMainActionClip(_getUpClip);
+                    _commuterAnimator.Play("SitDown", 0, 0f);
+                    yield return new WaitForSeconds(Mathf.Max(1.4f, ClipLength(_getUpClip)));
+                }
+                else
+                {
+                    yield return new WaitForSeconds(0.85f);
+                }
+            }
         }
 
         private void OverrideCommuterClips(Animator animator)
@@ -186,12 +338,11 @@ namespace TrainSurvival.Game
                 return;
             }
 
-            var controller = new AnimatorOverrideController(baseController);
-            var overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>();
-            controller.GetOverrides(overrides);
-            for (int i = 0; i < overrides.Count; i++)
+            _commuterOverrideController = new AnimatorOverrideController(baseController);
+            _commuterOverrideController.GetOverrides(_clipOverrides);
+            for (int i = 0; i < _clipOverrides.Count; i++)
             {
-                AnimationClip original = overrides[i].Key;
+                AnimationClip original = _clipOverrides[i].Key;
                 if (original == null)
                 {
                     continue;
@@ -200,6 +351,7 @@ namespace TrainSurvival.Game
                 AnimationClip replacement = null;
                 if (original.name.Contains("Stand_Trans_SitPiano"))
                 {
+                    _mainActionOriginalClip = original;
                     replacement = _dropClip;
                 }
                 else if (original.name.Contains("OrcHammer") && _collapsedLoopClip != null)
@@ -209,46 +361,30 @@ namespace TrainSurvival.Game
 
                 if (replacement != null)
                 {
-                    overrides[i] = new KeyValuePair<AnimationClip, AnimationClip>(original, replacement);
+                    _clipOverrides[i] = new KeyValuePair<AnimationClip, AnimationClip>(original, replacement);
                 }
             }
-            controller.ApplyOverrides(overrides);
-            animator.runtimeAnimatorController = controller;
+            _commuterOverrideController.ApplyOverrides(_clipOverrides);
+            animator.runtimeAnimatorController = _commuterOverrideController;
         }
 
-        private void SpawnBriefcase()
+        private void SetMainActionClip(AnimationClip clip)
         {
-            GameObject bag = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            bag.name = "DroppedBriefcase";
-            bag.transform.position = new Vector3(-0.38f, 0.12f, -0.48f);
-            bag.transform.rotation = Quaternion.Euler(4f, 24f, -9f);
-            bag.transform.localScale = new Vector3(0.46f, 0.22f, 0.12f);
-            var renderer = bag.GetComponent<Renderer>();
-            renderer.material.color = new Color(0.08f, 0.075f, 0.065f);
-            Destroy(bag.GetComponent<Collider>());
-
-            GameObject handle = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            handle.name = "BriefcaseHandle";
-            handle.transform.SetParent(bag.transform, false);
-            handle.transform.localPosition = new Vector3(0f, 0.68f, 0f);
-            handle.transform.localScale = new Vector3(0.42f, 0.16f, 0.24f);
-            handle.GetComponent<Renderer>().material.color = new Color(0.025f, 0.023f, 0.021f);
-            Destroy(handle.GetComponent<Collider>());
-        }
-
-        private void SpawnFloorShadows()
-        {
-            for (int i = 0; i < 3; i++)
+            if (_commuterOverrideController == null || _mainActionOriginalClip == null || clip == null)
             {
-                GameObject shadow = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                shadow.name = $"TitleShadow_{i}";
-                shadow.transform.position = new Vector3(-0.08f + i * 0.14f, -0.086f, -0.74f + i * 0.06f);
-                shadow.transform.localScale = new Vector3(0.72f - i * 0.1f, 0.008f, 0.22f);
-                shadow.transform.rotation = Quaternion.Euler(0f, 12f + i * 11f, 0f);
-                var renderer = shadow.GetComponent<Renderer>();
-                renderer.material.color = new Color(0f, 0f, 0f, 0.25f);
-                Destroy(shadow.GetComponent<Collider>());
+                return;
             }
+
+            _commuterOverrideController.GetOverrides(_clipOverrides);
+            for (int i = 0; i < _clipOverrides.Count; i++)
+            {
+                if (_clipOverrides[i].Key == _mainActionOriginalClip)
+                {
+                    _clipOverrides[i] = new KeyValuePair<AnimationClip, AnimationClip>(_mainActionOriginalClip, clip);
+                    break;
+                }
+            }
+            _commuterOverrideController.ApplyOverrides(_clipOverrides);
         }
 
         private void ConfigureCamera()
@@ -261,21 +397,28 @@ namespace TrainSurvival.Game
                 _camera = cameraGo.GetComponent<Camera>();
             }
 
+            // 車両中央で倒れる主役が読めるように、少し引いた正面斜めから見る。
             _cameraTransform = _camera.transform;
-            _cameraTransform.SetPositionAndRotation(new Vector3(2.15f, 1.24f, -4.35f), Quaternion.Euler(7f, -22f, 0f));
-            _cameraBasePosition = _cameraTransform.position;
-            _camera.fieldOfView = 54f;
+            Vector3 camPos = new Vector3(-1.25f, 1.10f, -2.85f);
+            Vector3 lookAt = new Vector3(0f, 0.82f, 0.08f);
+            _cameraTransform.position = camPos;
+            _cameraTransform.rotation = Quaternion.LookRotation((lookAt - camPos).normalized, Vector3.up);
+            _cameraBasePosition = camPos;
+            _camera.fieldOfView = 46f;
             _camera.clearFlags = CameraClearFlags.SolidColor;
-            _camera.backgroundColor = new Color(0.09f, 0.12f, 0.17f);
+            _camera.backgroundColor = BgNavy;
 
+            // 主役の顔に暖色のキーライトを当てる
             Light light = FindFirstObjectByType<Light>();
             if (light != null)
             {
-                light.transform.rotation = Quaternion.Euler(46f, -24f, 8f);
-                light.intensity = 2.4f;
-                light.color = new Color(1f, 0.95f, 0.84f);
+                light.transform.rotation = Quaternion.Euler(38f, -128f, 0f);
+                light.intensity = 2.5f;
+                light.color = new Color(1f, 0.94f, 0.82f);
             }
         }
+
+        // ---- 2D タイトル UI ----------------------------------------------
 
         private void BuildUi()
         {
@@ -291,16 +434,16 @@ namespace TrainSurvival.Game
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             RectTransform root = canvas.GetComponent<RectTransform>();
 
-            Image cover = CreateImage("Cover", root, Cover);
-            Stretch(cover.rectTransform);
+            // 画面全体を落ち着かせる暗幕。車内は見せつつ、文字を全面で読ませる。
+            Image vignette = CreateImage("Vignette", root, Vignette);
+            Stretch(vignette.rectTransform);
+            Image fullShade = CreateImage("FullShade", root, new Color(0.02f, 0.025f, 0.04f, 0.32f));
+            Stretch(fullShade.rectTransform);
 
-            _slashA = CreateSlash("SlashA", root, new Color(0f, 0f, 0f, 0.72f), new Vector2(1220f, 260f), new Vector2(590f, -80f), -13f);
-            _slashB = CreateSlash("SlashB", root, new Color(0.95f, 0.45f, 0.15f, 0.92f), new Vector2(1020f, 40f), new Vector2(640f, 128f), -13f);
-
-            BuildStationSign(root);
-            BuildTitle(root);
-            BuildStartCard(root);
-            BuildMovingBand(root);
+            BuildTitleBlock(root);
+            BuildStartBlock(root);
+            BuildTicker(root);
+            BuildVolumePanel(root);
 
             Image fadeImage = CreateImage("Fade", root, Color.black);
             Stretch(fadeImage.rectTransform);
@@ -309,124 +452,254 @@ namespace TrainSurvival.Game
             _fade.blocksRaycasts = false;
         }
 
-        private void BuildStationSign(RectTransform root)
+        private void BuildTitleBlock(RectTransform root)
         {
-            RectTransform sign = CreateImage("StationSign", root, Paper).rectTransform;
-            Anchor(sign, new Vector2(0f, 1f), new Vector2(34f, -32f), new Vector2(520f, 118f));
-            sign.pivot = new Vector2(0f, 1f);
+            var groupGo = new GameObject("TitleBlock", typeof(RectTransform));
+            groupGo.transform.SetParent(root, false);
+            _titleGroupRect = groupGo.GetComponent<RectTransform>();
+            Stretch(_titleGroupRect);
+            _titleGroup = groupGo.AddComponent<CanvasGroup>();
 
-            Image line = CreateImage("Line", sign, AccentOrange);
-            Anchor(line.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(520f, 10f));
+            // キッカー：小さな見出し＋オレンジの下線
+            Text kicker = CreateText("Kicker", _titleGroupRect, 30, TextAnchor.MiddleLeft);
+            kicker.text = "満員電車サバイバル";
+            kicker.color = new Color(1f, 1f, 1f, 0.82f);
+            kicker.fontStyle = FontStyle.Bold;
+            Anchor(kicker.rectTransform, new Vector2(0f, 1f), new Vector2(96f, -168f), new Vector2(520f, 44f));
 
-            Text next = CreateText("Next", sign, 22, TextAnchor.MiddleLeft);
-            next.text = "つぎは";
-            next.color = new Color(Ink.r, Ink.g, Ink.b, 0.72f);
-            Anchor(next.rectTransform, new Vector2(0f, 1f), new Vector2(26f, -16f), new Vector2(180f, 32f));
+            Image kickerLine = CreateImage("KickerLine", _titleGroupRect, AccentOrange);
+            Anchor(kickerLine.rectTransform, new Vector2(0f, 1f), new Vector2(98f, -206f), new Vector2(190f, 6f));
 
-            Text station = CreateText("Station", sign, 42, TextAnchor.MiddleLeft);
-            station.text = "空席";
-            station.color = Ink;
-            station.fontStyle = FontStyle.Bold;
-            Anchor(station.rectTransform, new Vector2(0f, 1f), new Vector2(24f, -48f), new Vector2(190f, 54f));
+            // タイトル本体（クリアな一枚影＋2行目に蛍光マーカー帯）
+            // 2行目のマーカー帯（テキストより先に生成して背面へ）
+            _highlight = CreateImage("Highlight", _titleGroupRect, new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.9f)).rectTransform;
+            Anchor(_highlight, new Vector2(0f, 1f), new Vector2(92f, -430f), new Vector2(660f, 96f));
+            _highlight.pivot = new Vector2(0f, 0.5f);
+            _highlightWidth = 660f;
 
-            Text route = CreateText("Route", sign, 20, TextAnchor.MiddleRight);
-            route.text = "7:42  通勤快速";
-            route.color = new Color(Ink.r, Ink.g, Ink.b, 0.7f);
-            Anchor(route.rectTransform, new Vector2(1f, 1f), new Vector2(-20f, -62f), new Vector2(250f, 34f));
+            CreateTitleText("TitleShadow", _titleGroupRect, new Vector2(106f, -234f), new Color(0f, 0f, 0f, 0.55f));
+            CreateTitleText("Title", _titleGroupRect, new Vector2(100f, -228f), Color.white);
         }
 
-        private void BuildTitle(RectTransform root)
+        private void CreateTitleText(string name, RectTransform parent, Vector2 pos, Color color)
         {
-            Text title = CreateText("Title", root, 100, TextAnchor.UpperLeft);
+            Text title = CreateText(name, parent, 118, TextAnchor.UpperLeft);
             title.text = "座れ！\nサラリーマン！";
             title.fontStyle = FontStyle.Bold;
-            title.color = Color.white;
-            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(52f, -204f), new Vector2(900f, 250f));
-
-            Text titleShadow = CreateText("TitleShadow", root, 100, TextAnchor.UpperLeft);
-            titleShadow.text = title.text;
-            titleShadow.fontStyle = FontStyle.Bold;
-            titleShadow.color = new Color(0f, 0f, 0f, 0.55f);
-            Anchor(titleShadow.rectTransform, new Vector2(0f, 1f), new Vector2(64f, -194f), new Vector2(900f, 250f));
-            titleShadow.transform.SetSiblingIndex(title.transform.GetSiblingIndex());
-
-            Text tag = CreateText("Tag", root, 30, TextAnchor.MiddleLeft);
-            tag.text = "満員電車サバイバル";
-            tag.color = new Color(1f, 1f, 1f, 0.82f);
-            Anchor(tag.rectTransform, new Vector2(0f, 1f), new Vector2(60f, -468f), new Vector2(460f, 48f));
+            title.lineSpacing = 0.92f;
+            title.color = color;
+            Anchor(title.rectTransform, new Vector2(0f, 1f), pos, new Vector2(1000f, 320f));
         }
 
-        private void BuildStartCard(RectTransform root)
+        private void BuildStartBlock(RectTransform root)
         {
-            Image card = CreateImage("StartCard", root, CardBg);
-            RectTransform rect = card.rectTransform;
-            Anchor(rect, new Vector2(0f, 0f), new Vector2(52f, 58f), new Vector2(560f, 142f));
-            rect.pivot = new Vector2(0f, 0f);
+            var groupGo = new GameObject("StartBlock", typeof(RectTransform));
+            groupGo.transform.SetParent(root, false);
+            RectTransform groupRect = groupGo.GetComponent<RectTransform>();
+            Stretch(groupRect);
+            _startGroup = groupGo.AddComponent<CanvasGroup>();
 
-            Image accent = CreateImage("Accent", rect, AccentOrange);
-            accent.rectTransform.anchorMin = new Vector2(0f, 0f);
-            accent.rectTransform.anchorMax = new Vector2(0f, 1f);
-            accent.rectTransform.pivot = new Vector2(0f, 0.5f);
-            accent.rectTransform.anchoredPosition = Vector2.zero;
-            accent.rectTransform.sizeDelta = new Vector2(8f, 0f);
-
-            Text copy = CreateText("Copy", rect, 22, TextAnchor.MiddleLeft);
-            copy.text = "席が空いたら、朝はまだ続く。";
-            copy.color = new Color(1f, 1f, 1f, 0.68f);
-            Anchor(copy.rectTransform, new Vector2(0f, 1f), new Vector2(28f, -18f), new Vector2(360f, 36f));
+            // 押せる面として読めるように、タイトル帯とは違う白い駅看板ボタンにする。
+            RectTransform startShadow = CreateImage("StartButtonShadow", groupRect, new Color(0f, 0f, 0f, 0.42f)).rectTransform;
+            Anchor(startShadow, new Vector2(0f, 1f), new Vector2(160f, -570f), new Vector2(380f, 92f));
 
             var buttonGo = new GameObject("StartButton", typeof(RectTransform), typeof(Image), typeof(Button));
-            buttonGo.transform.SetParent(rect, false);
-            RectTransform buttonRect = buttonGo.GetComponent<RectTransform>();
-            Anchor(buttonRect, new Vector2(0f, 0f), new Vector2(28f, 22f), new Vector2(250f, 58f));
+            buttonGo.transform.SetParent(groupRect, false);
+            _startButton = buttonGo.GetComponent<RectTransform>();
+            Anchor(_startButton, new Vector2(0f, 1f), new Vector2(150f, -560f), new Vector2(380f, 92f));
+            _startButton.pivot = new Vector2(0.5f, 0.5f);
+            _startButton.anchoredPosition = new Vector2(340f, -606f);
             Image image = buttonGo.GetComponent<Image>();
-            image.color = AccentOrange;
+            image.color = new Color(0.98f, 0.96f, 0.88f);
+            var outline = buttonGo.AddComponent<Outline>();
+            outline.effectColor = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.95f);
+            outline.effectDistance = new Vector2(4f, -4f);
+            var shadow = buttonGo.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.45f);
+            shadow.effectDistance = new Vector2(8f, -8f);
             Button button = buttonGo.GetComponent<Button>();
             ColorBlock colors = button.colors;
-            colors.highlightedColor = new Color(1f, 0.58f, 0.30f);
-            colors.pressedColor = new Color(0.66f, 0.30f, 0.10f);
+            colors.normalColor = new Color(0.98f, 0.96f, 0.88f);
+            colors.highlightedColor = Color.white;
+            colors.pressedColor = new Color(1f, 0.78f, 0.45f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.colorMultiplier = 1f;
             button.colors = colors;
             button.onClick.AddListener(StartGame);
+            AddHover(_startButton, hovering => _startHover = hovering);
 
-            Text buttonText = CreateText("Text", buttonRect, 27, TextAnchor.MiddleCenter);
-            buttonText.text = "出勤する";
+            RectTransform stripe = CreateImage("AccentStripe", _startButton, AccentOrange).rectTransform;
+            stripe.anchorMin = new Vector2(0f, 0f);
+            stripe.anchorMax = new Vector2(0f, 1f);
+            stripe.pivot = new Vector2(0f, 0.5f);
+            stripe.anchoredPosition = Vector2.zero;
+            stripe.sizeDelta = new Vector2(12f, 0f);
+
+            Text buttonText = CreateText("Text", _startButton, 34, TextAnchor.MiddleCenter);
+            buttonText.text = "▶  出勤する";
             buttonText.fontStyle = FontStyle.Bold;
+            buttonText.color = new Color(0.08f, 0.09f, 0.12f);
             Stretch(buttonText.rectTransform);
 
-            Text hint = CreateText("Hint", rect, 18, TextAnchor.MiddleLeft);
-            hint.text = "ENTER / SPACE";
-            hint.color = new Color(1f, 1f, 1f, 0.42f);
-            Anchor(hint.rectTransform, new Vector2(0f, 0f), new Vector2(300f, 36f), new Vector2(190f, 30f));
+            RectTransform rankingShadow = CreateImage("RankingButtonShadow", groupRect, new Color(0f, 0f, 0f, 0.30f)).rectTransform;
+            Anchor(rankingShadow, new Vector2(0f, 1f), new Vector2(158f, -672f), new Vector2(376f, 70f));
+
+            var rankingGo = new GameObject("RankingButton", typeof(RectTransform), typeof(Image), typeof(Button));
+            rankingGo.transform.SetParent(groupRect, false);
+            _rankingButton = rankingGo.GetComponent<RectTransform>();
+            Anchor(_rankingButton, new Vector2(0f, 1f), new Vector2(150f, -664f), new Vector2(376f, 70f));
+            _rankingButton.pivot = new Vector2(0.5f, 0.5f);
+            _rankingButton.anchoredPosition = new Vector2(338f, -699f);
+            Image rankingImage = rankingGo.GetComponent<Image>();
+            rankingImage.color = new Color(0.055f, 0.065f, 0.09f, 0.94f);
+            var rankingOutline = rankingGo.AddComponent<Outline>();
+            rankingOutline.effectColor = new Color(1f, 1f, 1f, 0.42f);
+            rankingOutline.effectDistance = new Vector2(2f, -2f);
+            Button rankingButton = rankingGo.GetComponent<Button>();
+            ColorBlock rankingColors = rankingButton.colors;
+            rankingColors.normalColor = new Color(0.055f, 0.065f, 0.09f, 0.94f);
+            rankingColors.highlightedColor = new Color(0.11f, 0.12f, 0.16f, 0.98f);
+            rankingColors.pressedColor = new Color(0.16f, 0.17f, 0.20f, 1f);
+            rankingColors.selectedColor = rankingColors.highlightedColor;
+            rankingColors.colorMultiplier = 1f;
+            rankingButton.colors = rankingColors;
+            rankingButton.onClick.AddListener(ShowRankingPlaceholder);
+            AddHover(_rankingButton, hovering => _rankingButton.localScale = hovering ? new Vector3(1.035f, 1.035f, 1f) : Vector3.one);
+
+            Text rankingText = CreateText("Text", _rankingButton, 28, TextAnchor.MiddleCenter);
+            rankingText.text = "ランキング";
+            rankingText.fontStyle = FontStyle.Bold;
+            rankingText.color = new Color(1f, 1f, 1f, 0.86f);
+            Stretch(rankingText.rectTransform);
+
+            Text hint = CreateText("Hint", groupRect, 20, TextAnchor.MiddleLeft);
+            hint.text = "ENTER / SPACE で発車";
+            hint.color = new Color(1f, 1f, 1f, 0.5f);
+            Anchor(hint.rectTransform, new Vector2(0f, 1f), new Vector2(150f, -748f), new Vector2(360f, 30f));
         }
 
-        private void BuildMovingBand(RectTransform root)
+        private void BuildTicker(RectTransform root)
         {
-            RectTransform mask = CreateImage("TickerMask", root, new Color(0f, 0f, 0f, 0.58f)).rectTransform;
-            mask.anchorMin = new Vector2(0f, 1f);
-            mask.anchorMax = new Vector2(1f, 1f);
-            mask.pivot = new Vector2(0.5f, 1f);
-            mask.anchoredPosition = new Vector2(0f, -154f);
-            mask.sizeDelta = new Vector2(0f, 36f);
+            // 下段いっぱいの LED 運行案内（濃紺の帯にアンバーの流れる文字）
+            RectTransform strip = CreateImage("TickerStrip", root, new Color(0.03f, 0.04f, 0.06f, 0.92f)).rectTransform;
+            strip.anchorMin = new Vector2(0f, 0f);
+            strip.anchorMax = new Vector2(1f, 0f);
+            strip.pivot = new Vector2(0.5f, 0f);
+            strip.anchoredPosition = Vector2.zero;
+            strip.sizeDelta = new Vector2(0f, 52f);
 
-            _trainBand = new GameObject("Ticker", typeof(RectTransform)).GetComponent<RectTransform>();
-            _trainBand.SetParent(mask, false);
-            _trainBand.sizeDelta = new Vector2(2400f, 36f);
-            Text ticker = CreateText("Text", _trainBand, 18, TextAnchor.MiddleCenter);
-            ticker.text = "発車します  ドアが閉まります  本日も満員です  発車します  ドアが閉まります  本日も満員です";
-            ticker.color = new Color(1f, 1f, 1f, 0.54f);
-            ticker.rectTransform.sizeDelta = new Vector2(2400f, 36f);
+            Image topLine = CreateImage("TickerTop", strip, new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.7f));
+            topLine.rectTransform.anchorMin = new Vector2(0f, 1f);
+            topLine.rectTransform.anchorMax = new Vector2(1f, 1f);
+            topLine.rectTransform.pivot = new Vector2(0.5f, 1f);
+            topLine.rectTransform.sizeDelta = new Vector2(0f, 3f);
+            topLine.rectTransform.anchoredPosition = Vector2.zero;
+
+            _ticker = new GameObject("Ticker", typeof(RectTransform)).GetComponent<RectTransform>();
+            _ticker.SetParent(strip, false);
+            _ticker.anchorMin = new Vector2(0f, 0.5f);
+            _ticker.anchorMax = new Vector2(0f, 0.5f);
+            _ticker.pivot = new Vector2(0f, 0.5f);
+            _ticker.sizeDelta = new Vector2(3200f, 52f);
+
+            Text ticker = CreateText("Text", _ticker, 24, TextAnchor.MiddleLeft);
+            const string unit = "◆ 本日も満員電車です　◆ 空席を見つけて座り、朝を生き延びろ　◆ ドアが閉まります、ご注意ください　";
+            ticker.text = unit + unit + unit;
+            ticker.color = Amber;
+            Stretch(ticker.rectTransform);
         }
 
-        private static RectTransform CreateSlash(string name, RectTransform parent, Color color, Vector2 size, Vector2 position, float zRot)
+        private void BuildVolumePanel(RectTransform root)
         {
-            RectTransform rect = CreateImage(name, parent, color).rectTransform;
-            rect.anchorMin = new Vector2(1f, 0.5f);
-            rect.anchorMax = new Vector2(1f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = position;
-            rect.sizeDelta = size;
-            rect.localRotation = Quaternion.Euler(0f, 0f, zRot);
-            return rect;
+            GameAudio audio = GameAudio.Instance;
+
+            Image panel = CreateImage("VolumePanel", root, CardBg);
+            RectTransform rect = panel.rectTransform;
+            Anchor(rect, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(320f, 132f));
+            rect.pivot = new Vector2(1f, 1f);
+
+            Text head = CreateText("Head", rect, 20, TextAnchor.MiddleLeft);
+            head.text = "音量";
+            head.color = new Color(1f, 1f, 1f, 0.7f);
+            head.fontStyle = FontStyle.Bold;
+            Anchor(head.rectTransform, new Vector2(0f, 1f), new Vector2(20f, -12f), new Vector2(120f, 26f));
+
+            BuildSlider(rect, "BGM", new Vector2(20f, -48f), audio.BgmVolume, v => audio.BgmVolume = v);
+            BuildSlider(rect, "SE", new Vector2(20f, -90f), audio.SeVolume, v => audio.SeVolume = v);
+        }
+
+        /// <summary>ラベル付きの簡易スライダー（ハンドル無し・バーをドラッグで値変更）。</summary>
+        private void BuildSlider(RectTransform parent, string label, Vector2 pos, float value, UnityEngine.Events.UnityAction<float> onChanged)
+        {
+            Text tag = CreateText($"{label}Label", parent, 18, TextAnchor.MiddleLeft);
+            tag.text = label;
+            tag.color = new Color(1f, 1f, 1f, 0.62f);
+            Anchor(tag.rectTransform, new Vector2(0f, 1f), new Vector2(20f, pos.y), new Vector2(52f, 28f));
+
+            var sliderGo = new GameObject($"{label}Slider", typeof(RectTransform), typeof(Image), typeof(Slider));
+            sliderGo.transform.SetParent(parent, false);
+            RectTransform sliderRect = sliderGo.GetComponent<RectTransform>();
+            Anchor(sliderRect, new Vector2(0f, 1f), new Vector2(76f, pos.y), new Vector2(212f, 20f));
+            sliderRect.pivot = new Vector2(0f, 0.5f);
+            Image bg = sliderGo.GetComponent<Image>();
+            bg.color = new Color(1f, 1f, 1f, 0.14f);
+
+            // 塗り（Fill Area > Fill）
+            var fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
+            fillAreaGo.transform.SetParent(sliderRect, false);
+            RectTransform fillArea = fillAreaGo.GetComponent<RectTransform>();
+            fillArea.anchorMin = new Vector2(0f, 0f);
+            fillArea.anchorMax = new Vector2(1f, 1f);
+            fillArea.offsetMin = Vector2.zero;
+            fillArea.offsetMax = Vector2.zero;
+
+            Image fillImage = CreateImage("Fill", fillArea, AccentOrange);
+            fillImage.raycastTarget = false;
+            RectTransform fillRect = fillImage.rectTransform;
+            fillRect.anchorMin = new Vector2(0f, 0f);
+            fillRect.anchorMax = new Vector2(0f, 1f);
+            fillRect.pivot = new Vector2(0f, 0.5f);
+            fillRect.sizeDelta = new Vector2(0f, 0f);
+
+            Slider slider = sliderGo.GetComponent<Slider>();
+            slider.transition = Selectable.Transition.None;
+            slider.fillRect = fillRect;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.value = value;
+            slider.onValueChanged.AddListener(onChanged);
+        }
+
+        // ---- 補間ユーティリティ（すべて unscaled 時間） --------------------
+
+        private static IEnumerator Animate(float duration, System.Action<float> step)
+        {
+            float t = 0f;
+            while (t < 1f)
+            {
+                t = duration <= 0f ? 1f : Mathf.Min(1f, t + Time.unscaledDeltaTime / duration);
+                step(t);
+                yield return null;
+            }
+        }
+
+        private static float EaseOutCubic(float x) => 1f - Mathf.Pow(1f - x, 3f);
+
+        private static float ClipLength(AnimationClip clip) => clip != null ? clip.length : 0f;
+
+        private static void AddHover(RectTransform target, System.Action<bool> onHover)
+        {
+            var trigger = target.gameObject.AddComponent<EventTrigger>();
+            AddTrigger(trigger, EventTriggerType.PointerEnter, () => onHover(true));
+            AddTrigger(trigger, EventTriggerType.PointerExit, () => onHover(false));
+        }
+
+        private static void AddTrigger(EventTrigger trigger, EventTriggerType type, System.Action action)
+        {
+            var entry = new EventTrigger.Entry { eventID = type };
+            entry.callback.AddListener(_ => action());
+            trigger.triggers.Add(entry);
         }
 
         private static void EnsureEventSystem()

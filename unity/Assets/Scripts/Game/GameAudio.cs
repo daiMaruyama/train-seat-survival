@@ -55,7 +55,7 @@ namespace TrainSurvival.Game
             set
             {
                 _bgmVolume = Mathf.Clamp01(value);
-                _bgmSource.volume = _bgmVolume;
+                ApplyBgmVolume();
                 PlayerPrefs.SetFloat(BgmVolumeKey, _bgmVolume);
             }
         }
@@ -67,6 +67,7 @@ namespace TrainSurvival.Game
             set
             {
                 _seVolume = Mathf.Clamp01(value);
+                ApplySeVolume();
                 PlayerPrefs.SetFloat(SeVolumeKey, _seVolume);
             }
         }
@@ -92,6 +93,7 @@ namespace TrainSurvival.Game
             {
                 _sePool[i] = gameObject.AddComponent<AudioSource>();
                 _sePool[i].playOnAwake = false;
+                _sePool[i].volume = _seVolume;
             }
         }
 
@@ -116,7 +118,8 @@ namespace TrainSurvival.Game
             AudioSource src = _sePool[_seIndex];
             _seIndex = (_seIndex + 1) % _sePool.Length;
             src.pitch = pitch;
-            src.PlayOneShot(clip, _seVolume);
+            src.volume = _seVolume;
+            src.PlayOneShot(clip, 1f);
             Log($"play {sfx} clip={clip.name} pitch={pitch:0.00} vol={_seVolume:0.00}");
         }
 
@@ -168,6 +171,30 @@ namespace TrainSurvival.Game
         private void Update()
         {
             UpdateHeartbeat();
+        }
+
+        private void ApplyBgmVolume()
+        {
+            if (_bgmSource != null)
+            {
+                _bgmSource.volume = _bgmVolume;
+            }
+        }
+
+        private void ApplySeVolume()
+        {
+            if (_sePool == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _sePool.Length; i++)
+            {
+                if (_sePool[i] != null)
+                {
+                    _sePool[i].volume = _seVolume;
+                }
+            }
         }
 
         private void UpdateHeartbeat()
