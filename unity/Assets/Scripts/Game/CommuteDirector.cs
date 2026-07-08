@@ -33,7 +33,7 @@ namespace TrainSurvival.Game
         [SerializeField] private int _stationCount = 10;
         [SerializeField] private int _standeeCount = 28;
         [SerializeField] private float _secondsPerStation = 8f;   // サクサク進行。1駅の長さ
-        [SerializeField] private float _drainRampPerLeg = 0.25f;  // 乗り換えごとの消耗倍率の伸び
+        [SerializeField] private float _drainRampPerDay = 0.25f;  // 日ごとの消耗倍率の伸び。ランを青天井にしない
         [SerializeField] private float _takerHesitation = 0.45f; // 立ち客が空席に気づいてから動くまでの迷い＝プレイヤーの勝機（ギリ反応できる長さ）
 
         [Header("停車（駅サイクル）")]
@@ -107,6 +107,7 @@ namespace TrainSurvival.Game
             RegisterAudioClips();
 
             SetupLeg(_seed);
+            ApplyDifficultyToPlayer();
             MovePlayerToDoorFront();
             _stationTimer = _secondsPerStation;
             ResetHornTimer();
@@ -313,15 +314,24 @@ namespace TrainSurvival.Game
             if (_player != null)
             {
                 _player.ResetForTransfer();
-                var stamina = _player.GetComponent<StaminaSystem>();
-                if (stamina != null)
-                {
-                    stamina.DrainMultiplier = 1f + _drainRampPerLeg * _leg;
-                }
+                ApplyDifficultyToPlayer();
                 MovePlayerToDoorFront();
             }
 
             SetupLeg(_seed + _leg);
+        }
+
+        private void ApplyDifficultyToPlayer()
+        {
+            var stamina = _player != null ? _player.GetComponent<StaminaSystem>() : null;
+            if (stamina == null)
+            {
+                return;
+            }
+
+            float ramp = Mathf.Max(0f, _drainRampPerDay);
+            float uncapped = 1f + ramp * _leg;
+            stamina.DrainMultiplier = uncapped;
         }
 
         /// <summary>開始時・乗り換え時のプレイヤー初期位置。前日座った席に残さず、ドア前の通路へ戻す。</summary>
@@ -697,6 +707,7 @@ namespace TrainSurvival.Game
         private IEnumerator SeatedDayRoutine()
         {
             _transitioning = true;
+            SetPlayerStaminaPaused(true);
             yield return new WaitForSeconds(1.0f); // 座れた余韻
 
             // ペルソナ風カットイン（CutInView）で日替わり。画面が覆われた瞬間に世界を入れ替える
@@ -724,7 +735,17 @@ namespace TrainSurvival.Game
             {
                 yield return null;
             }
+            SetPlayerStaminaPaused(false);
             _transitioning = false;
+        }
+
+        private void SetPlayerStaminaPaused(bool paused)
+        {
+            var stamina = _player != null ? _player.GetComponent<StaminaSystem>() : null;
+            if (stamina != null)
+            {
+                stamina.IsPaused = paused;
+            }
         }
 
         /// <summary>プレイヤーが席を立った。空いた席はすぐ立ち客に狙われる。</summary>

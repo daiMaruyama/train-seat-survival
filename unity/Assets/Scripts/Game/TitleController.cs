@@ -231,9 +231,11 @@ namespace TrainSurvival.Game
         private void BuildWorld()
         {
             var carGo = new GameObject("TitleCar");
+            CarBuilder.OverrideNextCoffeeSpawn(false);
             carGo.AddComponent<CarBuilder>();
 
             var sceneryGo = new GameObject("TitleScenery");
+            Scenery.OverrideNextBuildingCount(5);
             sceneryGo.AddComponent<Scenery>();
 
             SpawnCommuter();
@@ -499,7 +501,7 @@ namespace TrainSurvival.Game
             Stretch(groupRect);
             _startGroup = groupGo.AddComponent<CanvasGroup>();
 
-            // 押せる面として読めるように、タイトル帯とは違う白い駅看板ボタンにする。
+            // InGame HUD と同じ暗い面＋左アクセントで、押せるUIとして読ませる。
             RectTransform startShadow = CreateImage("StartButtonShadow", groupRect, new Color(0f, 0f, 0f, 0.42f)).rectTransform;
             Anchor(startShadow, new Vector2(0f, 1f), new Vector2(160f, -570f), new Vector2(380f, 92f));
 
@@ -510,18 +512,18 @@ namespace TrainSurvival.Game
             _startButton.pivot = new Vector2(0.5f, 0.5f);
             _startButton.anchoredPosition = new Vector2(340f, -606f);
             Image image = buttonGo.GetComponent<Image>();
-            image.color = new Color(0.98f, 0.96f, 0.88f);
+            image.color = new Color(0.055f, 0.065f, 0.095f, 0.96f);
             var outline = buttonGo.AddComponent<Outline>();
             outline.effectColor = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.95f);
-            outline.effectDistance = new Vector2(4f, -4f);
+            outline.effectDistance = new Vector2(3f, -3f);
             var shadow = buttonGo.AddComponent<Shadow>();
             shadow.effectColor = new Color(0f, 0f, 0f, 0.45f);
             shadow.effectDistance = new Vector2(8f, -8f);
             Button button = buttonGo.GetComponent<Button>();
             ColorBlock colors = button.colors;
-            colors.normalColor = new Color(0.98f, 0.96f, 0.88f);
-            colors.highlightedColor = Color.white;
-            colors.pressedColor = new Color(1f, 0.78f, 0.45f);
+            colors.normalColor = new Color(0.055f, 0.065f, 0.095f, 0.96f);
+            colors.highlightedColor = new Color(0.11f, 0.12f, 0.16f, 1f);
+            colors.pressedColor = new Color(0.18f, 0.16f, 0.13f, 1f);
             colors.selectedColor = colors.highlightedColor;
             colors.colorMultiplier = 1f;
             button.colors = colors;
@@ -538,7 +540,7 @@ namespace TrainSurvival.Game
             Text buttonText = CreateText("Text", _startButton, 34, TextAnchor.MiddleCenter);
             buttonText.text = "▶  出勤する";
             buttonText.fontStyle = FontStyle.Bold;
-            buttonText.color = new Color(0.08f, 0.09f, 0.12f);
+            buttonText.color = Color.white;
             Stretch(buttonText.rectTransform);
 
             RectTransform rankingShadow = CreateImage("RankingButtonShadow", groupRect, new Color(0f, 0f, 0f, 0.30f)).rectTransform;
@@ -565,6 +567,13 @@ namespace TrainSurvival.Game
             rankingButton.colors = rankingColors;
             rankingButton.onClick.AddListener(ShowRankingPlaceholder);
             AddHover(_rankingButton, hovering => _rankingButton.localScale = hovering ? new Vector3(1.035f, 1.035f, 1f) : Vector3.one);
+
+            RectTransform rankingStripe = CreateImage("AccentStripe", _rankingButton, AccentOrange).rectTransform;
+            rankingStripe.anchorMin = new Vector2(0f, 0f);
+            rankingStripe.anchorMax = new Vector2(0f, 1f);
+            rankingStripe.pivot = new Vector2(0f, 0.5f);
+            rankingStripe.anchoredPosition = Vector2.zero;
+            rankingStripe.sizeDelta = new Vector2(7f, 0f);
 
             Text rankingText = CreateText("Text", _rankingButton, 28, TextAnchor.MiddleCenter);
             rankingText.text = "ランキング";

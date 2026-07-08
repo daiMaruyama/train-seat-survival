@@ -42,6 +42,7 @@ namespace TrainSurvival.Game
         private readonly List<Vector3> _doors = new List<Vector3>();
         private readonly List<SeatMarker> _markers = new List<SeatMarker>();
         private readonly List<Renderer> _doorRenderers = new List<Renderer>();
+        private static bool? _nextSpawnCoffeeOverride;
 
         /// <summary>車内の全座席（組み立て順）。Awake 後に有効。</summary>
         public IReadOnlyList<SeatAnchor> Seats => _seats;
@@ -51,6 +52,12 @@ namespace TrainSurvival.Game
 
         /// <summary>座席インデックスと同順のマーカー（空席ハイライトの制御用）。</summary>
         public IReadOnlyList<SeatMarker> Markers => _markers;
+
+        /// <summary>次にランタイム生成する車両だけ、コーヒー生成の有無を上書きする（タイトル用）。</summary>
+        public static void OverrideNextCoffeeSpawn(bool spawn)
+        {
+            _nextSpawnCoffeeOverride = spawn;
+        }
 
         /// <summary>ドアを視覚的に開閉する。コライダーは残すので車外へは出られない。</summary>
         public void SetDoorsOpen(bool open)
@@ -83,7 +90,9 @@ namespace TrainSurvival.Game
             BuildSide(1, length, recordDoors: false);
             BuildHangingLine(-1, length);
             BuildHangingLine(1, length);
-            BuildCoffeeCups(length);
+            bool spawnCoffee = _nextSpawnCoffeeOverride ?? _spawnCoffeeCups;
+            _nextSpawnCoffeeOverride = null;
+            BuildCoffeeCups(length, spawnCoffee);
         }
 
         /// <summary>片側ぶんの壁・ベンチ・窓・ドア・ポール・網棚・座席アンカーを並べる。</summary>
@@ -320,9 +329,9 @@ namespace TrainSurvival.Game
                 withCollider: true);
         }
 
-        private void BuildCoffeeCups(float length)
+        private void BuildCoffeeCups(float length, bool spawn)
         {
-            if (!_spawnCoffeeCups)
+            if (!spawn)
             {
                 return;
             }

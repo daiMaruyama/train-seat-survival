@@ -65,7 +65,7 @@ namespace TrainSurvival.Game
                 _animator = go.GetComponent<Animator>();
                 if (_animator != null)
                 {
-                    _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; // 画面外でも姿勢を書き続ける
+                    _animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
                 }
                 CacheBones();
                 CaptureAlignments();

@@ -20,7 +20,7 @@ namespace TrainSurvival.Game
         [SerializeField] private float _loopLength = 90f; // ループ区間の長さ
         [SerializeField] private float _nearDistance = 8f;  // 窓からの距離（近景）
         [SerializeField] private float _farDistance = 22f;  // 窓からの距離（遠景）
-        [SerializeField] private int _buildingsPerLayer = 14; // 片側・1層あたりのビル数
+        [SerializeField] private int _buildingsPerLayer = 10; // 片側・1層あたりのビル数
 
         // 車内（明るい暖色グレー）と被らない、彩度のある街色パレット
         private static readonly Color[] BuildingColors =
@@ -44,10 +44,24 @@ namespace TrainSurvival.Game
 
         private readonly List<Layer> _layers = new List<Layer>();
         private readonly List<Material> _materials = new List<Material>();
+        private readonly List<Mesh> _meshes = new List<Mesh>();
+        private Material _windowMaterial;
         private CommuteDirector _director;
+        private static int? _nextBuildingCountOverride;
+
+        public static void OverrideNextBuildingCount(int count)
+        {
+            _nextBuildingCountOverride = Mathf.Max(1, count);
+        }
 
         private void Start()
         {
+            if (_nextBuildingCountOverride.HasValue)
+            {
+                _buildingsPerLayer = _nextBuildingCountOverride.Value;
+                _nextBuildingCountOverride = null;
+            }
+
             _director = FindFirstObjectByType<CommuteDirector>();
             // 地面（車両の下～遠くまで。線路まわりの暗い帯）
             CreateGround();
@@ -64,6 +78,10 @@ namespace TrainSurvival.Game
         {
             // 電車の疑似速度（停車で0、発車で1へ）に連動して流す
             float speed01 = _director != null ? _director.TrainSpeed01 : 1f;
+            if (speed01 <= 0.001f)
+            {
+                return;
+            }
 
             // 後方(-z)へ流し、ループ端で前方へ戻して高さを引き直す
             foreach (Layer layer in _layers)
@@ -103,6 +121,7 @@ namespace TrainSurvival.Game
 
                 var renderer = go.GetComponent<Renderer>();
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
                 Color c = BuildingColors[Random.Range(0, BuildingColors.Length)];
                 c = new Color(Mathf.Min(1f, c.r * tint.r), Mathf.Min(1f, c.g * tint.g), Mathf.Min(1f, c.b * tint.b));
                 Material m = renderer.material;
@@ -121,39 +140,90 @@ namespace TrainSurvival.Game
 
         private void AddWindows(Transform building, int side, float width, float height, float depth)
         {
-            int rows = Mathf.Clamp(Mathf.FloorToInt(height / 1.1f), 2, 9);
-            int cols = Mathf.Clamp(Mathf.FloorToInt(depth / 0.9f), 2, 7);
+            int rows = Mathf.Clamp(Mathf.FloorToInt(height / 1.5f), 2, 5);
+            int cols = Mathf.Clamp(Mathf.FloorToInt(depth / 1.3f), 2, 4);
+            var verts = new List<Vector3>(rows * cols * 4);
+            var normals = new List<Vector3>(rows * cols * 4);
+            var tris = new List<int>(rows * cols * 6);
+            Vector3 normal = new Vector3(-side, 0f, 0f);
+
             for (int r = 0; r < rows; r++)
             {
                 for (int c = 0; c < cols; c++)
                 {
-                    if ((r + c) % 3 == 0)
+                    if ((r + c) % 2 == 0)
                     {
                         continue;
                     }
 
-                    GameObject win = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    win.name = $"Win_{r}_{c}";
-                    win.transform.SetParent(building, false);
                     float y = -0.36f + (r + 0.5f) / rows * 0.72f;
                     float z = -0.38f + (c + 0.5f) / cols * 0.76f;
-                    win.transform.localPosition = new Vector3(-side * 0.505f, y, z);
-                    win.transform.localScale = new Vector3(0.025f / width, 0.22f / height, 0.34f / depth);
-                    Destroy(win.GetComponent<Collider>());
+                    float halfY = 0.11f / height;
+                    float halfZ = 0.17f / depth;
+                    float x = -side * 0.506f;
+                    int v = verts.Count;
 
-                    var renderer = win.GetComponent<Renderer>();
-                    renderer.shadowCastingMode = ShadowCastingMode.Off;
-                    Material material = renderer.material;
-                    Color color = WindowColor;
-                    color.a *= Random.Range(0.55f, 1f);
-                    material.color = color;
-                    if (material.HasProperty("_BaseColor"))
-                    {
-                        material.SetColor("_BaseColor", color);
-                    }
-                    _materials.Add(material);
+                    verts.Add(new Vector3(x, y - halfY, z - halfZ));
+                    verts.Add(new Vector3(x, y + halfY, z - halfZ));
+                    verts.Add(new Vector3(x, y + halfY, z + halfZ));
+                    verts.Add(new Vector3(x, y - halfY, z + halfZ));
+                    normals.Add(normal);
+                    normals.Add(normal);
+                    normals.Add(normal);
+                    normals.Add(normal);
+
+                    tris.Add(v);
+                    tris.Add(v + 1);
+                    tris.Add(v + 2);
+                    tris.Add(v);
+                    tris.Add(v + 2);
+                    tris.Add(v + 3);
                 }
             }
+
+            if (verts.Count == 0)
+            {
+                return;
+            }
+
+            var go = new GameObject("Windows", typeof(MeshFilter), typeof(MeshRenderer));
+            go.transform.SetParent(building, false);
+            var mesh = new Mesh { name = "BuildingWindows" };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            _meshes.Add(mesh);
+            go.GetComponent<MeshFilter>().sharedMesh = mesh;
+
+            var renderer = go.GetComponent<MeshRenderer>();
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.sharedMaterial = WindowMaterial();
+        }
+
+        private Material WindowMaterial()
+        {
+            if (_windowMaterial == null)
+            {
+                _windowMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                _windowMaterial.color = WindowColor;
+                if (_windowMaterial.HasProperty("_BaseColor"))
+                {
+                    _windowMaterial.SetColor("_BaseColor", WindowColor);
+                }
+                _windowMaterial.EnableKeyword("_EMISSION");
+                if (_windowMaterial.HasProperty("_EmissionColor"))
+                {
+                    _windowMaterial.SetColor("_EmissionColor", WindowColor * 0.6f);
+                }
+                if (_windowMaterial.HasProperty("_Cull"))
+                {
+                    _windowMaterial.SetFloat("_Cull", (float)CullMode.Off);
+                }
+                _windowMaterial.enableInstancing = true;
+            }
+            return _windowMaterial;
         }
 
         /// <summary>ループで戻ってきたビルの高さだけ引き直す（色まで変えるとチカチカするので据え置き）。</summary>
@@ -177,6 +247,7 @@ namespace TrainSurvival.Game
             ground.transform.localScale = new Vector3(120f, 1f, _loopLength + 40f);
             var renderer = ground.GetComponent<Renderer>();
             renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
             Material m = renderer.material;
             m.color = GroundColor;
             if (m.HasProperty("_BaseColor"))
@@ -191,6 +262,14 @@ namespace TrainSurvival.Game
             foreach (Material m in _materials)
             {
                 Destroy(m);
+            }
+            foreach (Mesh mesh in _meshes)
+            {
+                Destroy(mesh);
+            }
+            if (_windowMaterial != null)
+            {
+                Destroy(_windowMaterial);
             }
         }
     }

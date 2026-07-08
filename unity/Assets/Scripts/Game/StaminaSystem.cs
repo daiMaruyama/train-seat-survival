@@ -23,8 +23,11 @@ namespace TrainSurvival.Game
         public float Normalized => _max <= 0f ? 0f : Mathf.Clamp01(_current / _max);
         public bool IsEmpty => _current <= 0f;
 
-        /// <summary>難度用の消耗倍率。乗り換えのたびに上がる（＝日が進むほどキツく、ランは必ず終わる）。</summary>
+        /// <summary>難度用の消耗倍率。日が進むほど上がる（＝通勤が徐々にキツくなり、ランは必ず終わる）。</summary>
         public float DrainMultiplier { get; set; } = 1f;
+
+        /// <summary>日替わりカットイン中など、ゲーム操作へ戻る前は消耗を止める。</summary>
+        public bool IsPaused { get; set; }
 
         /// <summary>回復イベント（座れた日のご褒美など）。上限で頭打ち。</summary>
         public void Restore(float amount)
@@ -40,6 +43,12 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
+            if (IsPaused)
+            {
+                GameAudio.Instance.SetHeartbeat(false);
+                return;
+            }
+
             // 座っても回復は微々たるもの。立ちの消耗が主で、ランは長くは続かない。
             float perSecond = _sit != null && _sit.IsSeated ? _recoverPerSecond : -_drainPerSecond * DrainMultiplier;
             _current = Mathf.Clamp(_current + perSecond * Time.deltaTime, 0f, _max);

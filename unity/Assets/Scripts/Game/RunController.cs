@@ -73,8 +73,8 @@ namespace TrainSurvival.Game
             {
                 Time.timeScale = _slowMotionScale; // 背後の世界はスローに
                 _cutIn.PlayGameOver(
-                    $"{days}日目の朝、力尽きた。",
-                    $"通算 {stations} 駅",
+                    "過労で倒れてしまった",
+                    $"{days}日目の朝 / 通算 {stations} 駅",
                     onCovered: () => Time.timeScale = 0f,
                     onRestart: Restart);
             }

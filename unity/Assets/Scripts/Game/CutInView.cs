@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace TrainSurvival.Game
@@ -11,7 +12,7 @@ namespace TrainSurvival.Game
     /// 通勤テーマのカットイン演出（描画専用・ルールは持たない）。
     /// ・日替わり：暗がりのカバーがかかり、光る窓の列＝電車が通過していく。駅名標スタイルの
     /// 　「つぎは ▶ N日目」がコトンと降りて、電車が行ってしまうと新しい朝
-    /// ・ゲームオーバー：暗転の中に「運行終了」の札とリザルト（何日目・通算駅数）＋リトライ
+    /// ・ゲームオーバー：暗転の中に「過労で倒れてしまった」ことを伝える札とリザルト＋導線
     /// 　（倒れ込むカメラ演出は RunController 側が担当）
     /// アニメーションはすべて unscaled 時間で駆動する（timeScale=0 でも動く）。
     /// </summary>
@@ -38,6 +39,7 @@ namespace TrainSurvival.Game
         private Text _resultHeadline;
         private Text _resultSub;
         private Action _onRestart;
+        [SerializeField] private string _titleSceneName = "Title";
 
         /// <summary>演出再生中か（多重再生ガード）。</summary>
         public bool IsBusy { get; private set; }
@@ -102,7 +104,7 @@ namespace TrainSurvival.Game
             onDone?.Invoke();
         }
 
-        // ---- ゲームオーバー：運行終了 --------------------------------------
+        // ---- ゲームオーバー：過労で倒れる ----------------------------------
 
         private IEnumerator GameOverRoutine(string headline, string subline, Action onCovered)
         {
@@ -125,7 +127,7 @@ namespace TrainSurvival.Game
 
             yield return WaitUnscaled(0.4f);
 
-            // 「運行終了」の札とリザルトがせり上がる
+            // 札とリザルトがせり上がる
             RectTransform resultRect = _resultGroup.GetComponent<RectTransform>();
             yield return Animate(0.4f, t =>
             {
@@ -221,7 +223,7 @@ namespace TrainSurvival.Game
             _overDark = CreateImage("Dark", _overRoot, new Color(0.02f, 0.02f, 0.04f, 0f));
             Stretch(_overDark.rectTransform);
 
-            // リザルト（運行終了の札＋見出し＋通算＋リトライ）
+            // リザルト（過労の札＋見出し＋通算＋導線）
             var resultGo = new GameObject("Result", typeof(RectTransform), typeof(CanvasGroup));
             var resultRect = resultGo.GetComponent<RectTransform>();
             resultRect.SetParent(_overRoot, false);
@@ -229,19 +231,19 @@ namespace TrainSurvival.Game
             resultRect.sizeDelta = new Vector2(1000f, 420f);
             _resultGroup = resultGo.GetComponent<CanvasGroup>();
 
-            // 「運行終了」の札（行先表示風：濃紺地にオレンジ枠）
+            // 札（行先表示風：濃紺地にオレンジ枠）
             var plate = new GameObject("Plate", typeof(RectTransform)).GetComponent<RectTransform>();
             plate.SetParent(resultRect, false);
             plate.anchoredPosition = new Vector2(0f, 150f);
-            Image plateFrame = CreateImage("Frame", plate, AccentOrange);
-            plateFrame.rectTransform.sizeDelta = new Vector2(332f, 92f);
+            Image plateFrame = CreateImage("Frame", plate, new Color(0.82f, 0.16f, 0.12f));
+            plateFrame.rectTransform.sizeDelta = new Vector2(420f, 92f);
             Image plateBody = CreateImage("Body", plate, new Color(0.10f, 0.12f, 0.18f));
-            plateBody.rectTransform.sizeDelta = new Vector2(320f, 80f);
+            plateBody.rectTransform.sizeDelta = new Vector2(408f, 80f);
             Text plateText = CreateText("Text", plate, 40, TextAnchor.MiddleCenter);
-            plateText.text = "運 行 終 了";
+            plateText.text = "過 労 警 報";
             plateText.color = new Color(0.95f, 0.93f, 0.88f);
             plateText.fontStyle = FontStyle.Bold;
-            plateText.rectTransform.sizeDelta = new Vector2(320f, 80f);
+            plateText.rectTransform.sizeDelta = new Vector2(408f, 80f);
 
             _resultHeadline = CreateText("Headline", resultRect, 48, TextAnchor.MiddleCenter);
             _resultHeadline.color = new Color(0.95f, 0.93f, 0.88f);
@@ -254,33 +256,85 @@ namespace TrainSurvival.Game
             _resultSub.rectTransform.anchoredPosition = new Vector2(0f, 0f);
             _resultSub.rectTransform.sizeDelta = new Vector2(1000f, 42f);
 
-            // リトライボタン（落ち着いたオレンジ）
-            var buttonGo = new GameObject("Retry", typeof(RectTransform), typeof(Image), typeof(Button));
-            var buttonRect = buttonGo.GetComponent<RectTransform>();
-            buttonRect.SetParent(resultRect, false);
-            buttonRect.anchoredPosition = new Vector2(0f, -85f);
-            buttonRect.sizeDelta = new Vector2(300f, 62f);
-            var buttonImage = buttonGo.GetComponent<Image>();
-            buttonImage.color = new Color(0.85f, 0.40f, 0.14f);
-            var button = buttonGo.GetComponent<Button>();
-            ColorBlock colors = button.colors;
-            colors.highlightedColor = new Color(1f, 0.58f, 0.30f);
-            colors.pressedColor = new Color(0.66f, 0.30f, 0.10f);
-            button.colors = colors;
-            button.onClick.AddListener(() => _onRestart?.Invoke());
-            Text buttonText = CreateText("Text", buttonRect, 28, TextAnchor.MiddleCenter);
-            buttonText.text = "明日も出勤する";
-            buttonText.color = Color.white;
-            buttonText.fontStyle = FontStyle.Bold;
-            Stretch(buttonText.rectTransform);
+            CreateGameOverButton("Retry", resultRect, new Vector2(-230f, -92f), new Vector2(300f, 64f),
+                "もう一度出勤する", new Color(0.075f, 0.085f, 0.12f, 0.96f), () => _onRestart?.Invoke());
+            CreateGameOverButton("Title", resultRect, new Vector2(105f, -92f), new Vector2(230f, 64f),
+                "タイトルへ", new Color(0.055f, 0.065f, 0.095f, 0.96f), LoadTitle);
+            CreateGameOverButton("Ranking", resultRect, new Vector2(365f, -92f), new Vector2(230f, 64f),
+                "ランキング", new Color(0.055f, 0.065f, 0.095f, 0.96f), ShowRankingPlaceholder);
 
             Text hint = CreateText("Hint", resultRect, 20, TextAnchor.MiddleCenter);
-            hint.text = "R でもやり直せます";
+            hint.text = "R でもリトライ";
             hint.color = new Color(1f, 1f, 1f, 0.45f);
             hint.rectTransform.anchoredPosition = new Vector2(0f, -140f);
             hint.rectTransform.sizeDelta = new Vector2(600f, 28f);
 
             _overRoot.gameObject.SetActive(false);
+        }
+
+        private void CreateGameOverButton(string name, RectTransform parent, Vector2 position, Vector2 size, string label, Color color, Action onClick)
+        {
+            var buttonGo = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            var buttonRect = buttonGo.GetComponent<RectTransform>();
+            buttonRect.SetParent(parent, false);
+            buttonRect.anchoredPosition = position;
+            buttonRect.sizeDelta = size;
+            var buttonImage = buttonGo.GetComponent<Image>();
+            buttonImage.color = color;
+            var outline = buttonGo.AddComponent<Outline>();
+            outline.effectColor = Color.Lerp(color, AccentOrange, 0.55f);
+            outline.effectDistance = new Vector2(2f, -2f);
+            var shadow = buttonGo.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.38f);
+            shadow.effectDistance = new Vector2(6f, -6f);
+            var button = buttonGo.GetComponent<Button>();
+            ColorBlock colors = button.colors;
+            colors.normalColor = color;
+            colors.highlightedColor = Color.Lerp(color, Color.white, 0.24f);
+            colors.pressedColor = Color.Lerp(color, Color.black, 0.18f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
+            button.onClick.AddListener(() => onClick?.Invoke());
+            AddHover(buttonRect);
+
+            Image stripe = CreateImage("Accent", buttonRect, AccentOrange);
+            stripe.rectTransform.anchorMin = new Vector2(0f, 0f);
+            stripe.rectTransform.anchorMax = new Vector2(0f, 1f);
+            stripe.rectTransform.pivot = new Vector2(0f, 0.5f);
+            stripe.rectTransform.anchoredPosition = Vector2.zero;
+            stripe.rectTransform.sizeDelta = new Vector2(7f, 0f);
+
+            Text buttonText = CreateText("Text", buttonRect, 26, TextAnchor.MiddleCenter);
+            buttonText.text = label;
+            buttonText.color = color.grayscale > 0.5f ? SignInk : Color.white;
+            buttonText.fontStyle = FontStyle.Bold;
+            Stretch(buttonText.rectTransform);
+        }
+
+        private void LoadTitle()
+        {
+            Time.timeScale = 1f;
+            SceneManager.LoadScene(_titleSceneName);
+        }
+
+        private void ShowRankingPlaceholder()
+        {
+            GameAudio.Instance.Play(GameAudio.Sfx.Ding, 0.92f);
+        }
+
+        private static void AddHover(RectTransform target)
+        {
+            var trigger = target.gameObject.AddComponent<EventTrigger>();
+            AddTrigger(trigger, EventTriggerType.PointerEnter, () => target.localScale = new Vector3(1.035f, 1.035f, 1f));
+            AddTrigger(trigger, EventTriggerType.PointerExit, () => target.localScale = Vector3.one);
+        }
+
+        private static void AddTrigger(EventTrigger trigger, EventTriggerType type, Action action)
+        {
+            var entry = new EventTrigger.Entry { eventID = type };
+            entry.callback.AddListener(_ => action());
+            trigger.triggers.Add(entry);
         }
 
         // ---- 小道具 --------------------------------------------------------

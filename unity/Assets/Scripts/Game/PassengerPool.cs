@@ -15,6 +15,7 @@ namespace TrainSurvival.Game
 
         private readonly Transform _parent;
         private readonly Queue<PassengerActor> _idle = new Queue<PassengerActor>();
+        private readonly List<GameObject> _variantBag = new List<GameObject>();
 
         public PassengerPool(Transform parent)
         {
@@ -52,11 +53,34 @@ namespace TrainSurvival.Game
             var go = new GameObject("Passenger");
             go.transform.SetParent(_parent, false);
             var actor = go.AddComponent<PassengerActor>();
-            GameObject variant = _variants.Length > 0
-                ? _variants[Random.Range(0, _variants.Length)]
-                : null;
+            GameObject variant = NextVariant();
             actor.BuildBody(variant);
             return actor;
+        }
+
+        private GameObject NextVariant()
+        {
+            if (_variants.Length == 0)
+            {
+                return null;
+            }
+
+            if (_variantBag.Count == 0)
+            {
+                _variantBag.AddRange(_variants);
+                for (int i = _variantBag.Count - 1; i > 0; i--)
+                {
+                    int j = Random.Range(0, i + 1);
+                    GameObject tmp = _variantBag[i];
+                    _variantBag[i] = _variantBag[j];
+                    _variantBag[j] = tmp;
+                }
+            }
+
+            int last = _variantBag.Count - 1;
+            GameObject variant = _variantBag[last];
+            _variantBag.RemoveAt(last);
+            return variant;
         }
     }
 }
