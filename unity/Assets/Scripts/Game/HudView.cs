@@ -22,23 +22,18 @@ namespace TrainSurvival.Game
         private StaminaSystem _stamina;
         private CommuteDirector _director;
         private PlayerSit _player;
-        private RunController _run;
 
         private RectTransform _fill;
         private Image _fillImage;
         private Text _staminaLabel;
         private Text _info;
         private Text _prompt;
-        private Text _gameOver;
-        private Image _fade;      // 日替わり演出の黒フェード（Director の値を映すだけ）
-        private Text _dayLabel;   // 「2日目」など
 
         private void Start()
         {
             _stamina = FindFirstObjectByType<StaminaSystem>();
             _director = FindFirstObjectByType<CommuteDirector>();
             _player = FindFirstObjectByType<PlayerSit>();
-            _run = FindFirstObjectByType<RunController>();
             Build();
         }
 
@@ -57,11 +52,6 @@ namespace TrainSurvival.Game
                 _info.text = $"{_director.Leg + 1}日目    駅 {_director.CurrentStation}/{_director.StationCount - 1}"
                            + $"    生存 {_director.TotalStationsSurvived}駅    "
                            + (_director.IsAtStation ? "停車中" : $"次の駅まで {_director.SecondsToNextStation:0}s");
-
-                Color fadeColor = _fade.color;
-                fadeColor.a = _director.TransitionAlpha;
-                _fade.color = fadeColor;
-                _dayLabel.text = _director.TransitionLabel;
             }
 
             if (_player != null)
@@ -71,12 +61,6 @@ namespace TrainSurvival.Game
                              : string.Empty;
             }
 
-            if (_gameOver != null)
-            {
-                _gameOver.text = _run != null && _run.IsOver
-                    ? $"倒れた…\n生存 {(_director != null ? _director.TotalStationsSurvived : 0)}駅\nR でやり直し"
-                    : string.Empty;
-            }
         }
 
         private void Build()
@@ -122,30 +106,7 @@ namespace TrainSurvival.Game
             crosshair.rectTransform.pivot = new Vector2(0.5f, 0.5f);
             crosshair.rectTransform.anchoredPosition = Vector2.zero;
             crosshair.rectTransform.sizeDelta = new Vector2(40f, 40f);
-
-            // 日替わり演出：全画面の黒フェード＋中央の日付ラベル（最前面に重ねる）。
-            _fade = CreateImage("Fade", root, new Color(0f, 0f, 0f, 0f));
-            _fade.raycastTarget = false;
-            RectTransform fadeRect = _fade.rectTransform;
-            fadeRect.anchorMin = Vector2.zero;
-            fadeRect.anchorMax = Vector2.one;
-            fadeRect.offsetMin = Vector2.zero;
-            fadeRect.offsetMax = Vector2.zero;
-
-            _dayLabel = CreateText("DayLabel", root, 64, TextAnchor.MiddleCenter);
-            _dayLabel.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-            _dayLabel.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-            _dayLabel.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            _dayLabel.rectTransform.anchoredPosition = Vector2.zero;
-            _dayLabel.rectTransform.sizeDelta = new Vector2(600f, 120f);
-
-            _gameOver = CreateText("GameOver", root, 40, TextAnchor.MiddleCenter);
-            _gameOver.color = new Color(1f, 0.5f, 0.5f);
-            _gameOver.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-            _gameOver.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-            _gameOver.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            _gameOver.rectTransform.anchoredPosition = new Vector2(0f, 40f);
-            _gameOver.rectTransform.sizeDelta = new Vector2(600f, 200f);
+            // ※日替わり・ゲームオーバーの演出は CutInView が担当（ここは常時HUDのみ）
         }
 
         private static void Anchor(RectTransform rt, Vector2 anchor, Vector2 position, Vector2 size)
@@ -171,7 +132,7 @@ namespace TrainSurvival.Game
             var go = new GameObject(objName, typeof(Text));
             go.transform.SetParent(parent, false);
             var text = go.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = UiFont.Load();
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = Color.white;

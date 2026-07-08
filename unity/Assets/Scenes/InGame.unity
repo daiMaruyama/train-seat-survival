@@ -551,6 +551,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2837edbb631694527b10a11a35ef5e8e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.RunController
+  _slowMotionScale: 0.2
 --- !u!1 &1419756270
 GameObject:
   m_ObjectHideFlags: 0
@@ -691,6 +692,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1904752194}
   - component: {fileID: 1904752193}
+  - component: {fileID: 1904752195}
   m_Layer: 0
   m_Name: HUD
   m_TagString: Untagged
@@ -725,6 +727,18 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1904752195
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1904752192}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7335be9c1fb964e558782e8513d9d28e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.CutInView
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

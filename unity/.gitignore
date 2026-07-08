@@ -124,3 +124,7 @@ InitTestScene*.unity*
 /[Aa]ssets/Coffee_Cup.meta
 /[Aa]ssets/Resources/CoffeeCup/
 /[Aa]ssets/Resources/CoffeeCup.meta
+
+# フォント（外部配布物。導入方法はREADME参照。無い場合は内蔵フォントにフォールバック）
+/[Aa]ssets/Resources/Fonts/
+/[Aa]ssets/Resources/Fonts.meta

@@ -72,11 +72,7 @@ namespace TrainSurvival.Game
         /// <summary>停車中か（HUD 表示用）。</summary>
         public bool IsAtStation => _atStation;
 
-        /// <summary>日替わり演出の黒フェード濃度（0..1）。HudView が読んで描く。</summary>
-        public float TransitionAlpha { get; private set; }
-
-        /// <summary>日替わり演出中に出すラベル（「2日目」など）。HudView が読んで描く。</summary>
-        public string TransitionLabel { get; private set; } = "";
+        private CutInView _cutIn; // 日替わりカットイン演出（描画は向こう、タイミングはこちら）
         private int _leg;                // 何本目の電車か（乗り換え回数）
 
         /// <summary>ラン全体で生き延びた駅数（スコア）。</summary>
@@ -96,6 +92,7 @@ namespace TrainSurvival.Game
             _incoming = new Standee[seatCount];
             _pool = new PassengerPool(transform);
             _player = FindFirstObjectByType<PlayerSit>();
+            _cutIn = FindFirstObjectByType<CutInView>();
 
             SetupLeg(_seed);
             _stationTimer = _secondsPerStation;
@@ -567,12 +564,18 @@ namespace TrainSurvival.Game
             _transitioning = true;
             yield return new WaitForSeconds(1.0f); // 座れた余韻
 
-            for (float t = 0f; t < 1f; t += Time.deltaTime / 0.35f)
+            // ペルソナ風カットイン（CutInView）で日替わり。画面が覆われた瞬間に世界を入れ替える
+            string label = $"{_leg + 2}日目";
+            bool covered = _cutIn == null; // 演出が無ければ即時
+            bool done = _cutIn == null;
+            if (_cutIn != null)
             {
-                TransitionAlpha = Mathf.Clamp01(t);
+                _cutIn.PlayDayTransition(label, () => covered = true, () => done = true);
+            }
+            while (!covered)
+            {
                 yield return null;
             }
-            TransitionAlpha = 1f;
 
             Transfer(); // 日を進める：全員入れ替え・強制起立・消耗倍率アップ
             var stamina = _player != null ? _player.GetComponent<StaminaSystem>() : null;
@@ -580,17 +583,12 @@ namespace TrainSurvival.Game
             {
                 stamina.Restore(_sitReward);
             }
-            TransitionLabel = $"{_leg + 1}日目";
             _stationTimer = _secondsPerStation;
-            yield return new WaitForSeconds(0.9f);
 
-            TransitionLabel = "";
-            for (float t = 1f; t > 0f; t -= Time.deltaTime / 0.35f)
+            while (!done)
             {
-                TransitionAlpha = Mathf.Clamp01(t);
                 yield return null;
             }
-            TransitionAlpha = 0f;
             _transitioning = false;
         }
 
