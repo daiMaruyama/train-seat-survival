@@ -39,6 +39,7 @@ namespace TrainSurvival.Game
         private Text _statusText;
         private Text _staminaLabel;
         private Text _prompt;
+        private GameObject _hudCanvas;
 
         // ゲージ手触り用の内部状態
         private float _shown;      // 表示中の正規化値（実値へ追従）
@@ -53,6 +54,16 @@ namespace TrainSurvival.Game
             _director = FindFirstObjectByType<CommuteDirector>();
             _player = FindFirstObjectByType<PlayerSit>();
             Build();
+        }
+
+        /// <summary>HUDの表示だけを切る（GameObject は消さない＝同居する CutInView を巻き添えにしない）。</summary>
+        public void SetHudVisible(bool visible)
+        {
+            if (_hudCanvas != null)
+            {
+                _hudCanvas.SetActive(visible);
+            }
+            enabled = visible; // 非表示中は毎フレーム更新も止める
         }
 
         private void Update()
@@ -136,6 +147,7 @@ namespace TrainSurvival.Game
         {
             var canvasGo = new GameObject("HudCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGo.transform.SetParent(transform, false);
+            _hudCanvas = canvasGo;
             var canvas = canvasGo.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             var scaler = canvasGo.GetComponent<CanvasScaler>();

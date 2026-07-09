@@ -34,7 +34,7 @@ namespace TrainSurvival.Game
         [SerializeField] private AnimationClip _getUpClip;
 
         [Header("音素材")]
-        [SerializeField] private AudioClip _bgmClip; // タイトルBGM（未割当でも Assets/Audio/Title を自動検出）
+        [SerializeField] private AudioClip _bgmClip;
         [SerializeField] private AudioClip _arriveClip;
         [SerializeField] private AudioClip _bellClip;
         [SerializeField] private AudioClip _trainDepartureClip;
@@ -64,11 +64,9 @@ namespace TrainSurvival.Game
         private RectTransform _ticker;
         private float _tickerCycleWidth = 1600f;
         private RectTransform _startButton;
-        private RectTransform _rankingButton;
         private CanvasGroup _fade;
 
         private Vector3 _cameraBasePosition;
-        private bool _startHover;
         private bool _loading;
 
         private void Start()
@@ -105,11 +103,10 @@ namespace TrainSurvival.Game
                     + new Vector3(Mathf.Sin(t * 0.7f) * 0.015f, Mathf.Sin(t * 1.1f) * 0.010f, 0f);
             }
 
-            // スタートボタンをそっと脈打たせる
+            // スタートボタンをそっと脈打たせる（ホバーの色替えは UiKit.MakeButton 側が担当）
             if (_startButton != null)
             {
-                float hoverScale = _startHover ? 1.055f : 1f;
-                float pulse = hoverScale * (1f + 0.024f * Mathf.Sin(t * 3.2f));
+                float pulse = 1f + 0.024f * Mathf.Sin(t * 3.2f);
                 _startButton.localScale = new Vector3(pulse, pulse, 1f);
             }
 
@@ -175,6 +172,7 @@ namespace TrainSurvival.Game
                 }
             }
             GameAudio.Instance.StopBgm(); // タイトルBGMをゲームへ持ち込まない
+            RunStartContext.RequestOpeningDayTransition(); // InGame 開幕の日替わり演出を焚く
             SceneManager.LoadScene(_gameSceneName);
         }
 
@@ -510,89 +508,20 @@ namespace TrainSurvival.Game
             Stretch(groupRect);
             _startGroup = groupGo.AddComponent<CanvasGroup>();
 
-            // InGame HUD と同じ暗い面＋左アクセント。角丸＋パネルに追従する柔らかい影で質感を上げる。
-            var buttonGo = new GameObject("StartButton", typeof(RectTransform), typeof(Image), typeof(Button));
-            buttonGo.transform.SetParent(groupRect, false);
-            _startButton = buttonGo.GetComponent<RectTransform>();
-            Anchor(_startButton, new Vector2(0f, 1f), new Vector2(150f, -560f), new Vector2(380f, 92f));
-            _startButton.pivot = new Vector2(0.5f, 0.5f);
-            _startButton.anchoredPosition = new Vector2(340f, -606f);
-            Image image = buttonGo.GetComponent<Image>();
-            image.color = new Color(0.055f, 0.065f, 0.095f, 0.96f);
-            UiKit.Panelize(image, 18);
-            var outline = buttonGo.AddComponent<Outline>();
-            outline.effectColor = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.95f);
-            outline.effectDistance = new Vector2(2.5f, -2.5f);
-            Button button = buttonGo.GetComponent<Button>();
-            ColorBlock colors = button.colors;
-            colors.normalColor = new Color(0.055f, 0.065f, 0.095f, 0.96f);
-            colors.highlightedColor = new Color(0.11f, 0.12f, 0.16f, 1f);
-            colors.pressedColor = new Color(0.18f, 0.16f, 0.13f, 1f);
-            colors.selectedColor = colors.highlightedColor;
-            colors.colorMultiplier = 1f;
-            button.colors = colors;
-            button.onClick.AddListener(StartGame);
-            AddHover(_startButton, hovering => _startHover = hovering);
-            UiKit.AddShadow(image, 18, blur: 28, alpha: 0.5f, offset: new Vector2(0f, -10f));
+            // 全シーン共通ボタン（暗い面→ホバーでオレンジ）。同じ見た目・同じ大きさに統一。
+            // ※MakeButton は生成時の位置で影を焼くので、中心基準の最終位置で呼ぶ
+            // 　（左上(0,1)基準の (340,-600) は 1920×1080 中心座標で約 (-620,-70)）。
+            var btnSize = new Vector2(360f, 92f);
+            Button startBtn = UiKit.MakeButton(groupRect, new Vector2(-620f, -70f), btnSize, "出勤する", 30, StartGame);
+            _startButton = startBtn.GetComponent<RectTransform>();
 
-            Image stripeImg = CreateImage("AccentStripe", _startButton, AccentOrange);
-            RectTransform stripe = stripeImg.rectTransform;
-            stripe.anchorMin = new Vector2(0f, 0.5f);
-            stripe.anchorMax = new Vector2(0f, 0.5f);
-            stripe.pivot = new Vector2(0f, 0.5f);
-            stripe.anchoredPosition = new Vector2(10f, 0f);
-            stripe.sizeDelta = new Vector2(6f, 56f);
-            UiKit.Panelize(stripeImg, 3);
+            UiKit.MakeButton(groupRect, new Vector2(-620f, -176f), btnSize, "ランキング", 30, ShowRankingPlaceholder);
 
-            Text buttonText = CreateText("Text", _startButton, 34, TextAnchor.MiddleCenter);
-            buttonText.text = "▶  出勤する";
-            buttonText.fontStyle = FontStyle.Bold;
-            buttonText.color = Color.white;
-            Stretch(buttonText.rectTransform);
-
-            var rankingGo = new GameObject("RankingButton", typeof(RectTransform), typeof(Image), typeof(Button));
-            rankingGo.transform.SetParent(groupRect, false);
-            _rankingButton = rankingGo.GetComponent<RectTransform>();
-            Anchor(_rankingButton, new Vector2(0f, 1f), new Vector2(150f, -664f), new Vector2(376f, 70f));
-            _rankingButton.pivot = new Vector2(0.5f, 0.5f);
-            _rankingButton.anchoredPosition = new Vector2(338f, -699f);
-            Image rankingImage = rankingGo.GetComponent<Image>();
-            rankingImage.color = new Color(0.055f, 0.065f, 0.09f, 0.94f);
-            UiKit.Panelize(rankingImage, 16);
-            var rankingOutline = rankingGo.AddComponent<Outline>();
-            rankingOutline.effectColor = new Color(1f, 1f, 1f, 0.42f);
-            rankingOutline.effectDistance = new Vector2(2f, -2f);
-            Button rankingButton = rankingGo.GetComponent<Button>();
-            ColorBlock rankingColors = rankingButton.colors;
-            rankingColors.normalColor = new Color(0.055f, 0.065f, 0.09f, 0.94f);
-            rankingColors.highlightedColor = new Color(0.11f, 0.12f, 0.16f, 0.98f);
-            rankingColors.pressedColor = new Color(0.16f, 0.17f, 0.20f, 1f);
-            rankingColors.selectedColor = rankingColors.highlightedColor;
-            rankingColors.colorMultiplier = 1f;
-            rankingButton.colors = rankingColors;
-            rankingButton.onClick.AddListener(ShowRankingPlaceholder);
-            AddHover(_rankingButton, hovering => _rankingButton.localScale = hovering ? new Vector3(1.035f, 1.035f, 1f) : Vector3.one);
-            UiKit.AddShadow(rankingImage, 16, blur: 22, alpha: 0.4f, offset: new Vector2(0f, -8f));
-
-            Image rankingStripeImg = CreateImage("AccentStripe", _rankingButton, AccentOrange);
-            RectTransform rankingStripe = rankingStripeImg.rectTransform;
-            rankingStripe.anchorMin = new Vector2(0f, 0.5f);
-            rankingStripe.anchorMax = new Vector2(0f, 0.5f);
-            rankingStripe.pivot = new Vector2(0f, 0.5f);
-            rankingStripe.anchoredPosition = new Vector2(9f, 0f);
-            rankingStripe.sizeDelta = new Vector2(5f, 42f);
-            UiKit.Panelize(rankingStripeImg, 2);
-
-            Text rankingText = CreateText("Text", _rankingButton, 28, TextAnchor.MiddleCenter);
-            rankingText.text = "ランキング";
-            rankingText.fontStyle = FontStyle.Bold;
-            rankingText.color = new Color(1f, 1f, 1f, 0.86f);
-            Stretch(rankingText.rectTransform);
-
-            Text hint = CreateText("Hint", groupRect, 20, TextAnchor.MiddleLeft);
-            hint.text = "ENTER / SPACE で発車";
-            hint.color = new Color(1f, 1f, 1f, 0.5f);
-            Anchor(hint.rectTransform, new Vector2(0f, 1f), new Vector2(150f, -748f), new Vector2(360f, 30f));
+            Text hint = CreateText("Hint", groupRect, 22, TextAnchor.MiddleCenter);
+            hint.text = "［ENTER / SPACE］で発車";
+            hint.color = new Color(1f, 1f, 1f, 0.55f);
+            hint.fontStyle = FontStyle.Bold;
+            Anchor(hint.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(-620f, -252f), new Vector2(420f, 30f));
         }
 
         private void BuildTicker(RectTransform root)
@@ -741,20 +670,6 @@ namespace TrainSurvival.Game
         private static float EaseOutCubic(float x) => 1f - Mathf.Pow(1f - x, 3f);
 
         private static float ClipLength(AnimationClip clip) => clip != null ? clip.length : 0f;
-
-        private static void AddHover(RectTransform target, System.Action<bool> onHover)
-        {
-            var trigger = target.gameObject.AddComponent<EventTrigger>();
-            AddTrigger(trigger, EventTriggerType.PointerEnter, () => onHover(true));
-            AddTrigger(trigger, EventTriggerType.PointerExit, () => onHover(false));
-        }
-
-        private static void AddTrigger(EventTrigger trigger, EventTriggerType type, System.Action action)
-        {
-            var entry = new EventTrigger.Entry { eventID = type };
-            entry.callback.AddListener(_ => action());
-            trigger.triggers.Add(entry);
-        }
 
         private static void EnsureEventSystem()
         {

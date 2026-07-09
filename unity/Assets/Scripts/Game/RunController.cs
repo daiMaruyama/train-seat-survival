@@ -69,14 +69,23 @@ namespace TrainSurvival.Game
             {
                 fpc.enabled = false;
             }
+
+            // リザルト中は通常HUD（左上の「N日目」カード等）を消す。
+            // ※HudView と CutInView は同じ 'HUD' GameObject に同居しているので、GameObject 自体は
+            // 　消さず HUD のキャンバスだけ切る（消すと CutInView まで止まりリザルトが出ない）。
+            var hud = FindFirstObjectByType<HudView>();
+            if (hud != null)
+            {
+                hud.SetHudVisible(false);
+            }
             StartCoroutine(CollapseCamera());
 
             if (_cutIn != null)
             {
                 Time.timeScale = _slowMotionScale; // 背後の世界はスローに
                 _cutIn.PlayGameOver(
-                    "過労で倒れてしまった",
-                    $"{days}日目の朝 / 通算 {stations} 駅",
+                    days,
+                    stations,
                     onCovered: () => Time.timeScale = 0f,
                     onRestart: Restart);
             }

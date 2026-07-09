@@ -124,7 +124,14 @@ namespace TrainSurvival.Game
             _stationTimer = _secondsPerStation;
             ResetHornTimer();
             ApplyAudioTuning();
-            GameAudio.Instance.SetTrainMoving(true);
+            if (RunStartContext.ConsumeOpeningDayTransition())
+            {
+                StartCoroutine(OpeningDayRoutine());
+            }
+            else
+            {
+                GameAudio.Instance.SetTrainMoving(true);
+            }
         }
 
         /// <summary>1本ぶんの電車（レグ）を満員状態で組む。乗り換えのたびに新しい seed で呼び直す。</summary>
@@ -806,12 +813,50 @@ namespace TrainSurvival.Game
             _transitioning = false;
         }
 
+        private IEnumerator OpeningDayRoutine()
+        {
+            _transitioning = true;
+            SetPlayerStaminaPaused(true);
+            SetPlayerMovePaused(true);
+            GameAudio.Instance.SetTrainMoving(false);
+
+            bool covered = _cutIn == null;
+            bool done = _cutIn == null;
+            if (_cutIn != null)
+            {
+                covered = true;
+                _cutIn.PlayOpeningDayTransition("1日目", () => done = true);
+            }
+            while (!covered)
+            {
+                yield return null;
+            }
+            while (!done)
+            {
+                yield return null;
+            }
+
+            SetPlayerMovePaused(false);
+            SetPlayerStaminaPaused(false);
+            _transitioning = false;
+            GameAudio.Instance.SetTrainMoving(true);
+        }
+
         private void SetPlayerStaminaPaused(bool paused)
         {
             var stamina = _player != null ? _player.GetComponent<StaminaSystem>() : null;
             if (stamina != null)
             {
                 stamina.IsPaused = paused;
+            }
+        }
+
+        private void SetPlayerMovePaused(bool paused)
+        {
+            var controller = _player != null ? _player.GetComponent<FirstPersonController>() : null;
+            if (controller != null)
+            {
+                controller.CanMove = !paused;
             }
         }
 

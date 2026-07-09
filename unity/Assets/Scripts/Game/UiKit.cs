@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace TrainSurvival.Game
@@ -144,6 +145,139 @@ namespace TrainSurvival.Game
                 shadow.effectColor = new Color(0f, 0f, 0f, shadowAlpha);
                 shadow.effectDistance = new Vector2(0f, -3f);
             }
+        }
+
+        /// <summary>
+        /// 全シーン共通のボタン（ペルソナ／インディー調）。角はシャープ、影はぼかさないハードなオフセット、
+        /// 太いオレンジの縁。ホバーで面がオレンジに反転して影から一段“浮き”、押すと影へめり込む。
+        /// 生成した Button を返す（onClick 追加や RectTransform 取得に使える）。
+        /// </summary>
+        public static Button MakeButton(RectTransform parent, Vector2 anchoredPos, Vector2 size, string label, int fontSize, UnityEngine.Events.UnityAction onClick)
+        {
+            Color navy = new Color(0.10f, 0.12f, 0.18f, 1f);
+            Color orange = new Color(0.95f, 0.45f, 0.15f, 1f);
+            Color cream = new Color(0.96f, 0.94f, 0.89f, 1f);
+            Color shadowCol = new Color(0f, 0f, 0f, 0.6f);
+            const float bw = 4f; // 縁の太さ
+
+            // root＝クリック判定エリア（透明・不動）。ホバーで動かすのは中の見た目だけにして、
+            // 判定がカーソルから逃げて Enter/Exit を連打する“チカチカ”を防ぐ。
+            var rootGo = new GameObject("Button", typeof(RectTransform), typeof(Image), typeof(Button));
+            var root = rootGo.GetComponent<RectTransform>();
+            root.SetParent(parent, false);
+            root.anchoredPosition = anchoredPos;
+            root.sizeDelta = size;
+            var hit = rootGo.GetComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f); // 透明でもレイキャストは効く
+            hit.raycastTarget = true;
+
+            // ハード（ぼかさない）オフセット影＝コミック/リソグラフ感（root直下・不動）
+            Image shadow = PlainImage("Shadow", root, shadowCol, false);
+            Fill(shadow.rectTransform);
+            shadow.rectTransform.anchoredPosition = new Vector2(9f, -9f);
+
+            // 見た目一式（ホバー/押下で動くのはこのコンテナ）
+            var visual = new GameObject("Visual", typeof(RectTransform)).GetComponent<RectTransform>();
+            visual.SetParent(root, false);
+            visual.anchorMin = visual.anchorMax = new Vector2(0.5f, 0.5f);
+            visual.pivot = new Vector2(0.5f, 0.5f);
+            visual.sizeDelta = size;
+            visual.anchoredPosition = Vector2.zero;
+
+            Image border = PlainImage("Border", visual, orange, false); // 太い縁（オレンジ）
+            Fill(border.rectTransform);
+            Image fill = PlainImage("Fill", border.rectTransform, navy, false); // 面（ネイビー）
+            Fill(fill.rectTransform);
+            Inset(fill.rectTransform, bw);
+            Text text = ButtonLabel(fill.rectTransform, label, fontSize, cream);
+
+            var btn = rootGo.GetComponent<Button>();
+            btn.transition = Selectable.Transition.None; // 見た目はこちらで制御
+            btn.targetGraphic = hit;
+            if (onClick != null)
+            {
+                btn.onClick.AddListener(onClick);
+            }
+
+            var trigger = rootGo.AddComponent<EventTrigger>();
+            AddTrigger(trigger, EventTriggerType.PointerEnter, () =>
+            {
+                border.color = cream; fill.color = orange; text.color = navy;
+                visual.anchoredPosition = new Vector2(-3f, 3f);              // 見た目だけ浮く（判定は不動）
+                shadow.rectTransform.anchoredPosition = new Vector2(13f, -13f);
+            });
+            AddTrigger(trigger, EventTriggerType.PointerExit, () =>
+            {
+                border.color = orange; fill.color = navy; text.color = cream;
+                visual.anchoredPosition = Vector2.zero;
+                shadow.rectTransform.anchoredPosition = new Vector2(9f, -9f);
+            });
+            AddTrigger(trigger, EventTriggerType.PointerDown, () =>
+            {
+                visual.anchoredPosition = new Vector2(6f, -6f);             // 影へめり込む
+                shadow.rectTransform.anchoredPosition = new Vector2(3f, -3f);
+            });
+            AddTrigger(trigger, EventTriggerType.PointerUp, () =>
+            {
+                visual.anchoredPosition = new Vector2(-3f, 3f);
+                shadow.rectTransform.anchoredPosition = new Vector2(13f, -13f);
+            });
+            return btn;
+        }
+
+        private static Image PlainImage(string name, Transform parent, Color color, bool raycast)
+        {
+            var go = new GameObject(name, typeof(Image));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.color = color;           // sprite 無し＝シャープな矩形
+            img.raycastTarget = raycast;
+            return img;
+        }
+
+        private static void Fill(RectTransform rt)
+        {
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+        }
+
+        private static void Inset(RectTransform rt, float m)
+        {
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(m, m);
+            rt.offsetMax = new Vector2(-m, -m);
+        }
+
+        private static Text ButtonLabel(RectTransform parent, string label, int size, Color color)
+        {
+            var go = new GameObject("Text", typeof(Text));
+            go.transform.SetParent(parent, false);
+            var t = go.GetComponent<Text>();
+            t.font = UiFont.Load();
+            t.fontSize = size;
+            t.fontStyle = FontStyle.Bold;
+            t.alignment = TextAnchor.MiddleCenter;
+            t.color = color;
+            t.raycastTarget = false;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            t.verticalOverflow = VerticalWrapMode.Overflow;
+            t.text = label;
+            RectTransform r = t.rectTransform;
+            r.anchorMin = Vector2.zero;
+            r.anchorMax = Vector2.one;
+            r.offsetMin = Vector2.zero;
+            r.offsetMax = Vector2.zero;
+            return t;
+        }
+
+        private static void AddTrigger(EventTrigger trigger, EventTriggerType type, System.Action action)
+        {
+            var entry = new EventTrigger.Entry { eventID = type };
+            entry.callback.AddListener(_ => action());
+            trigger.triggers.Add(entry);
         }
 
         /// <summary>中央ドット＋四方の短いティックで構成した最小限のクロスヘアを作る。</summary>

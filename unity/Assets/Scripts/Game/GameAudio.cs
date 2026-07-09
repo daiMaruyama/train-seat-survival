@@ -475,7 +475,6 @@ namespace TrainSurvival.Game
                 case Sfx.Sit:
                 case Sfx.Coffee:
                 case Sfx.Ding:
-                case Sfx.Horn:
                     return 1f + Random.Range(-0.04f, 0.04f);
                 default:
                     return 1f;
