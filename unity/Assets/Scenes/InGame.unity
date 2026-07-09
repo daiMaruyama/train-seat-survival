@@ -524,6 +524,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.PlayerSit
   _reach: 1.6
   _seatedCameraDrop: 0.5
+  _seatedLookPitch: -9
 --- !u!114 &1407492781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -539,7 +540,8 @@ MonoBehaviour:
   _max: 100
   _drainPerSecond: 3
   _recoverPerSecond: 1
-  _dangerHeartbeatThreshold: 0.25
+  _heartbeatFadeInThreshold: 0.5
+  _heartbeatPeakThreshold: 0.05
 --- !u!114 &1407492782
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -623,7 +625,7 @@ MonoBehaviour:
   _stationCount: 10
   _standeeCount: 28
   _secondsPerStation: 6
-  _drainRampPerLeg: 0.16
+  _drainRampPerDay: 0.25
   _takerHesitation: 0.63
   _stationDwell: 3.5
   _brakeTime: 1.1
@@ -635,6 +637,35 @@ MonoBehaviour:
   _hornClip: {fileID: 0}
   _heartClip: {fileID: 0}
   _hornIntervalRange: {x: 8, y: 18}
+  _trainStopCue:
+    startTime: 0
+    duration: 0
+    volumeScale: 0.5
+    fadeOutSeconds: 0.08
+  _arriveCue:
+    startTime: 0
+    duration: 0
+    volumeScale: 1
+    fadeOutSeconds: 0.3
+  _bellCue:
+    startTime: 0
+    duration: 0
+    volumeScale: 1
+    fadeOutSeconds: 0.08
+  _trainRunCue:
+    startTime: 0
+    duration: 0
+    volumeScale: 0.62
+    fadeOutSeconds: 0.45
+  _hornCue:
+    startTime: 0
+    duration: 0
+    volumeScale: 1
+    fadeOutSeconds: 0.04
+  _trainStopToArriveDelay: 0.25
+  _arriveToDoorOpenDelay: 0
+  _bellToDoorCloseDelay: 0.7
+  _bellToDepartureDelay: 0.9
   _passengerScale: 0.72
   _passengerStandY: 0
   _passengerSitY: 0
@@ -748,6 +779,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7335be9c1fb964e558782e8513d9d28e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.CutInView
+  _titleSceneName: Title
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

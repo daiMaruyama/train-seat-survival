@@ -12,6 +12,7 @@ namespace TrainSurvival.Game
     {
         [SerializeField] private float _reach = 2.8f;
         [SerializeField] private float _seatedCameraDrop = 0.5f;
+        [SerializeField] private float _seatedLookPitch = -9f;
 
         private CommuteDirector _director;
         private FirstPersonController _controller;
@@ -45,10 +46,6 @@ namespace TrainSurvival.Game
             if (_seated)
             {
                 CanSitNow = false;
-                if (Pressed())
-                {
-                    Stand();
-                }
                 return;
             }
 
@@ -107,6 +104,15 @@ namespace TrainSurvival.Game
                 _controller.CanMove = false;
             }
             SetCameraHeight(_standEyeHeight - _seatedCameraDrop);
+            if (_controller != null)
+            {
+                _controller.SetPitch(_seatedLookPitch);
+            }
+            // 腰を下ろした瞬間、カメラがコクッと沈んで戻る（着席の手応え）
+            if (CameraJuice.Active != null)
+            {
+                CameraJuice.Active.Kick(new Vector3(5f, 0f, 1.5f));
+            }
             _seated = true;
         }
 
@@ -121,20 +127,12 @@ namespace TrainSurvival.Game
             }
         }
 
-        // 自分の意思で立つ：空いた席はすぐ立ち客に狙われる。
-        private void Stand()
-        {
-            StandUp();
-            int seat = _seatIndex;
-            _seatIndex = -1;
-            _director.PlayerVacated(seat);
-        }
-
         private void StandUp()
         {
             if (_controller != null)
             {
                 _controller.CanMove = true;
+                _controller.SetPitch(0f);
             }
             SetCameraHeight(_standEyeHeight);
             _seated = false;

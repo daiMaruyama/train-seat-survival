@@ -55,6 +55,8 @@ namespace TrainSurvival.Game
         private void Die()
         {
             IsOver = true;
+            GameAudio.Instance.SetTrainMoving(false);
+            GameAudio.Instance.SetHeartbeat(false);
             GameAudio.Instance.Play(GameAudio.Sfx.GameOver);
             Cursor.lockState = CursorLockMode.None;
 
@@ -104,10 +106,27 @@ namespace TrainSurvival.Game
             {
                 t = Mathf.Min(1f, t + Time.unscaledDeltaTime / duration);
                 float e = t * t * (3f - 2f * t); // smoothstep：始まりゆっくり→加速→着地は緩む
+                // 崩れ落ちる途中の細かな揺れ（体の重さ）。着地に近づくほど強くする
+                Vector3 fallNoise = Random.insideUnitSphere * (0.6f + 2.2f * Mathf.Max(0f, e - 0.75f) * 4f);
                 cam.localPosition = Vector3.Lerp(startPos, endPos, e);
-                cam.localRotation = Quaternion.Slerp(startRot, endRot, e);
+                cam.localRotation = Quaternion.Slerp(startRot, endRot, e) * Quaternion.Euler(fallNoise);
                 yield return null;
             }
+
+            // 着地の“ドサッ”という余韻の揺れ（減衰）
+            float s = 0f;
+            const float settle = 0.42f;
+            while (s < settle)
+            {
+                s += Time.unscaledDeltaTime;
+                float k = 1f - s / settle;
+                Vector3 n = new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)) * k * 3f;
+                cam.localRotation = endRot * Quaternion.Euler(n);
+                cam.localPosition = endPos + Random.insideUnitSphere * k * 0.018f;
+                yield return null;
+            }
+            cam.localPosition = endPos;
+            cam.localRotation = endRot;
         }
 
         /// <summary>やり直し（R キー／リトライボタン共通）。</summary>

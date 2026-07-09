@@ -37,6 +37,15 @@ namespace TrainSurvival.Game
             }
         }
 
+        public void SetPitch(float pitchDegrees)
+        {
+            _pitch = Mathf.Clamp(pitchDegrees, -_pitchLimit, _pitchLimit);
+            if (_camera != null)
+            {
+                _camera.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+            }
+        }
+
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
@@ -58,6 +67,10 @@ namespace TrainSurvival.Game
                 _camera.SetParent(transform);
                 _camera.localPosition = new Vector3(0f, _eyeHeight, 0f);
                 _camera.localRotation = Quaternion.identity;
+                if (_camera.GetComponent<CameraJuice>() == null)
+                {
+                    _camera.gameObject.AddComponent<CameraJuice>(); // 座った瞬間などのカメラキック用
+                }
             }
         }
 

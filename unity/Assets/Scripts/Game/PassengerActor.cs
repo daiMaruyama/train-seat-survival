@@ -117,10 +117,10 @@ namespace TrainSurvival.Game
             if (seated)
             {
                 ApplySitAlignment();
-                if (instant || _animator == null)
+                if (instant || !CanUseAnimator())
                 {
                     _sitPoseWeight = 1f;
-                    if (_animator != null)
+                    if (CanUseAnimator())
                     {
                         _animator.Play("Sit", 0, _sitTime);
                         _animator.Update(0.0001f);
@@ -137,7 +137,7 @@ namespace TrainSurvival.Game
             {
                 _sitPoseWeight = 0f;
                 ApplyStandAlignment();
-                if (_animator != null)
+                if (CanUseAnimator())
                 {
                     _animator.Play("Stand", 0, 0f); // 速度0ステートなので姿勢は一切ズレない
                 }
@@ -170,7 +170,7 @@ namespace TrainSurvival.Game
                 Step();
             }
 
-            if (_animator == null)
+            if (!CanUseAnimator())
             {
                 return;
             }
@@ -318,6 +318,11 @@ namespace TrainSurvival.Game
                 Debug.LogWarning("[PassengerActor] 想定ボーン（Rigify名）が見つからないため姿勢調整を無効化", this);
                 _spine = null;
             }
+        }
+
+        private bool CanUseAnimator()
+        {
+            return _animator != null && _animator.gameObject.activeInHierarchy;
         }
     }
 }

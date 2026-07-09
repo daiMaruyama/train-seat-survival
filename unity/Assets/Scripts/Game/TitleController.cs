@@ -471,19 +471,23 @@ namespace TrainSurvival.Game
 
             Image kickerLine = CreateImage("KickerLine", _titleGroupRect, AccentOrange);
             Anchor(kickerLine.rectTransform, new Vector2(0f, 1f), new Vector2(98f, -206f), new Vector2(190f, 6f));
+            UiKit.Panelize(kickerLine, 3);
 
             // タイトル本体（クリアな一枚影＋2行目に蛍光マーカー帯）
             // 2行目のマーカー帯（テキストより先に生成して背面へ）
-            _highlight = CreateImage("Highlight", _titleGroupRect, new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.9f)).rectTransform;
+            Image highlightImg = CreateImage("Highlight", _titleGroupRect, new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.9f));
+            _highlight = highlightImg.rectTransform;
             Anchor(_highlight, new Vector2(0f, 1f), new Vector2(92f, -430f), new Vector2(660f, 96f));
             _highlight.pivot = new Vector2(0f, 0.5f);
             _highlightWidth = 660f;
+            UiKit.Panelize(highlightImg, 8);
 
             CreateTitleText("TitleShadow", _titleGroupRect, new Vector2(106f, -234f), new Color(0f, 0f, 0f, 0.55f));
-            CreateTitleText("Title", _titleGroupRect, new Vector2(100f, -228f), Color.white);
+            Text titleMain = CreateTitleText("Title", _titleGroupRect, new Vector2(100f, -228f), Color.white);
+            UiKit.Outline(titleMain, 2f, 0f);
         }
 
-        private void CreateTitleText(string name, RectTransform parent, Vector2 pos, Color color)
+        private Text CreateTitleText(string name, RectTransform parent, Vector2 pos, Color color)
         {
             Text title = CreateText(name, parent, 118, TextAnchor.UpperLeft);
             title.text = "座れ！\nサラリーマン！";
@@ -491,6 +495,7 @@ namespace TrainSurvival.Game
             title.lineSpacing = 0.92f;
             title.color = color;
             Anchor(title.rectTransform, new Vector2(0f, 1f), pos, new Vector2(1000f, 320f));
+            return title;
         }
 
         private void BuildStartBlock(RectTransform root)
@@ -501,10 +506,7 @@ namespace TrainSurvival.Game
             Stretch(groupRect);
             _startGroup = groupGo.AddComponent<CanvasGroup>();
 
-            // InGame HUD と同じ暗い面＋左アクセントで、押せるUIとして読ませる。
-            RectTransform startShadow = CreateImage("StartButtonShadow", groupRect, new Color(0f, 0f, 0f, 0.42f)).rectTransform;
-            Anchor(startShadow, new Vector2(0f, 1f), new Vector2(160f, -570f), new Vector2(380f, 92f));
-
+            // InGame HUD と同じ暗い面＋左アクセント。角丸＋パネルに追従する柔らかい影で質感を上げる。
             var buttonGo = new GameObject("StartButton", typeof(RectTransform), typeof(Image), typeof(Button));
             buttonGo.transform.SetParent(groupRect, false);
             _startButton = buttonGo.GetComponent<RectTransform>();
@@ -513,12 +515,10 @@ namespace TrainSurvival.Game
             _startButton.anchoredPosition = new Vector2(340f, -606f);
             Image image = buttonGo.GetComponent<Image>();
             image.color = new Color(0.055f, 0.065f, 0.095f, 0.96f);
+            UiKit.Panelize(image, 18);
             var outline = buttonGo.AddComponent<Outline>();
             outline.effectColor = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.95f);
-            outline.effectDistance = new Vector2(3f, -3f);
-            var shadow = buttonGo.AddComponent<Shadow>();
-            shadow.effectColor = new Color(0f, 0f, 0f, 0.45f);
-            shadow.effectDistance = new Vector2(8f, -8f);
+            outline.effectDistance = new Vector2(2.5f, -2.5f);
             Button button = buttonGo.GetComponent<Button>();
             ColorBlock colors = button.colors;
             colors.normalColor = new Color(0.055f, 0.065f, 0.095f, 0.96f);
@@ -529,22 +529,22 @@ namespace TrainSurvival.Game
             button.colors = colors;
             button.onClick.AddListener(StartGame);
             AddHover(_startButton, hovering => _startHover = hovering);
+            UiKit.AddShadow(image, 18, blur: 28, alpha: 0.5f, offset: new Vector2(0f, -10f));
 
-            RectTransform stripe = CreateImage("AccentStripe", _startButton, AccentOrange).rectTransform;
-            stripe.anchorMin = new Vector2(0f, 0f);
-            stripe.anchorMax = new Vector2(0f, 1f);
+            Image stripeImg = CreateImage("AccentStripe", _startButton, AccentOrange);
+            RectTransform stripe = stripeImg.rectTransform;
+            stripe.anchorMin = new Vector2(0f, 0.5f);
+            stripe.anchorMax = new Vector2(0f, 0.5f);
             stripe.pivot = new Vector2(0f, 0.5f);
-            stripe.anchoredPosition = Vector2.zero;
-            stripe.sizeDelta = new Vector2(12f, 0f);
+            stripe.anchoredPosition = new Vector2(10f, 0f);
+            stripe.sizeDelta = new Vector2(6f, 56f);
+            UiKit.Panelize(stripeImg, 3);
 
             Text buttonText = CreateText("Text", _startButton, 34, TextAnchor.MiddleCenter);
             buttonText.text = "▶  出勤する";
             buttonText.fontStyle = FontStyle.Bold;
             buttonText.color = Color.white;
             Stretch(buttonText.rectTransform);
-
-            RectTransform rankingShadow = CreateImage("RankingButtonShadow", groupRect, new Color(0f, 0f, 0f, 0.30f)).rectTransform;
-            Anchor(rankingShadow, new Vector2(0f, 1f), new Vector2(158f, -672f), new Vector2(376f, 70f));
 
             var rankingGo = new GameObject("RankingButton", typeof(RectTransform), typeof(Image), typeof(Button));
             rankingGo.transform.SetParent(groupRect, false);
@@ -554,6 +554,7 @@ namespace TrainSurvival.Game
             _rankingButton.anchoredPosition = new Vector2(338f, -699f);
             Image rankingImage = rankingGo.GetComponent<Image>();
             rankingImage.color = new Color(0.055f, 0.065f, 0.09f, 0.94f);
+            UiKit.Panelize(rankingImage, 16);
             var rankingOutline = rankingGo.AddComponent<Outline>();
             rankingOutline.effectColor = new Color(1f, 1f, 1f, 0.42f);
             rankingOutline.effectDistance = new Vector2(2f, -2f);
@@ -567,13 +568,16 @@ namespace TrainSurvival.Game
             rankingButton.colors = rankingColors;
             rankingButton.onClick.AddListener(ShowRankingPlaceholder);
             AddHover(_rankingButton, hovering => _rankingButton.localScale = hovering ? new Vector3(1.035f, 1.035f, 1f) : Vector3.one);
+            UiKit.AddShadow(rankingImage, 16, blur: 22, alpha: 0.4f, offset: new Vector2(0f, -8f));
 
-            RectTransform rankingStripe = CreateImage("AccentStripe", _rankingButton, AccentOrange).rectTransform;
-            rankingStripe.anchorMin = new Vector2(0f, 0f);
-            rankingStripe.anchorMax = new Vector2(0f, 1f);
+            Image rankingStripeImg = CreateImage("AccentStripe", _rankingButton, AccentOrange);
+            RectTransform rankingStripe = rankingStripeImg.rectTransform;
+            rankingStripe.anchorMin = new Vector2(0f, 0.5f);
+            rankingStripe.anchorMax = new Vector2(0f, 0.5f);
             rankingStripe.pivot = new Vector2(0f, 0.5f);
-            rankingStripe.anchoredPosition = Vector2.zero;
-            rankingStripe.sizeDelta = new Vector2(7f, 0f);
+            rankingStripe.anchoredPosition = new Vector2(9f, 0f);
+            rankingStripe.sizeDelta = new Vector2(5f, 42f);
+            UiKit.Panelize(rankingStripeImg, 2);
 
             Text rankingText = CreateText("Text", _rankingButton, 28, TextAnchor.MiddleCenter);
             rankingText.text = "ランキング";
@@ -626,12 +630,15 @@ namespace TrainSurvival.Game
             RectTransform rect = panel.rectTransform;
             Anchor(rect, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(320f, 132f));
             rect.pivot = new Vector2(1f, 1f);
+            UiKit.Panelize(panel, 16);
+            UiKit.AddShadow(panel, 16, blur: 26, alpha: 0.42f, offset: new Vector2(0f, -8f));
 
             Text head = CreateText("Head", rect, 20, TextAnchor.MiddleLeft);
             head.text = "音量";
             head.color = new Color(1f, 1f, 1f, 0.7f);
             head.fontStyle = FontStyle.Bold;
             Anchor(head.rectTransform, new Vector2(0f, 1f), new Vector2(20f, -12f), new Vector2(120f, 26f));
+            UiKit.Outline(head, 1.1f, 0.35f);
 
             BuildSlider(rect, "BGM", new Vector2(20f, -48f), audio.BgmVolume, v => audio.BgmVolume = v);
             BuildSlider(rect, "SE", new Vector2(20f, -90f), audio.SeVolume, v => audio.SeVolume = v);
@@ -652,6 +659,7 @@ namespace TrainSurvival.Game
             sliderRect.pivot = new Vector2(0f, 0.5f);
             Image bg = sliderGo.GetComponent<Image>();
             bg.color = new Color(1f, 1f, 1f, 0.14f);
+            UiKit.Panelize(bg, 10);
 
             // 塗り（Fill Area > Fill）
             var fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
@@ -664,15 +672,33 @@ namespace TrainSurvival.Game
 
             Image fillImage = CreateImage("Fill", fillArea, AccentOrange);
             fillImage.raycastTarget = false;
+            UiKit.Panelize(fillImage, 9);
             RectTransform fillRect = fillImage.rectTransform;
             fillRect.anchorMin = new Vector2(0f, 0f);
             fillRect.anchorMax = new Vector2(0f, 1f);
             fillRect.pivot = new Vector2(0f, 0.5f);
             fillRect.sizeDelta = new Vector2(0f, 0f);
 
+            // つまみ（丸ノブ）で操作感を出す
+            var handleAreaGo = new GameObject("Handle Slide Area", typeof(RectTransform));
+            handleAreaGo.transform.SetParent(sliderRect, false);
+            RectTransform handleArea = handleAreaGo.GetComponent<RectTransform>();
+            handleArea.anchorMin = new Vector2(0f, 0f);
+            handleArea.anchorMax = new Vector2(1f, 1f);
+            handleArea.offsetMin = new Vector2(10f, 0f);
+            handleArea.offsetMax = new Vector2(-10f, 0f);
+
+            Image handleImage = CreateImage("Handle", handleArea, Color.white);
+            handleImage.raycastTarget = true;
+            UiKit.Panelize(handleImage, 10);
+            RectTransform handleRect = handleImage.rectTransform;
+            handleRect.sizeDelta = new Vector2(22f, 22f);
+
             Slider slider = sliderGo.GetComponent<Slider>();
             slider.transition = Selectable.Transition.None;
             slider.fillRect = fillRect;
+            slider.handleRect = handleRect;
+            slider.targetGraphic = handleImage;
             slider.direction = Slider.Direction.LeftToRight;
             slider.minValue = 0f;
             slider.maxValue = 1f;

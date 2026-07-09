@@ -73,7 +73,7 @@ namespace TrainSurvival.Game
 
             if (_player != null)
             {
-                _prompt.text = _player.IsSeated ? "E で立つ"
+                _prompt.text = _player.IsSeated ? "次の日まで休憩"
                              : _player.CanSitNow ? "E    座る"
                              : string.Empty;
             }
@@ -148,39 +148,46 @@ namespace TrainSurvival.Game
             _card = cardBg.rectTransform;
             Anchor(_card, new Vector2(0f, 1f), new Vector2(20f, -20f), new Vector2(BarWidth + 52f, 128f));
             _card.pivot = new Vector2(0f, 1f);
+            UiKit.Panelize(cardBg, 18);
+            UiKit.AddShadow(cardBg, 18, blur: 30, alpha: 0.5f, offset: new Vector2(0f, -10f));
 
-            // 左端のオレンジ帯（路線カラー）
+            // 左端のオレンジ帯（路線カラー・角丸に合わせて少し内側＆丸める）
             Image accent = CreateImage("Accent", _card, AccentOrange);
-            accent.rectTransform.anchorMin = new Vector2(0f, 0f);
-            accent.rectTransform.anchorMax = new Vector2(0f, 1f);
+            accent.rectTransform.anchorMin = new Vector2(0f, 0.5f);
+            accent.rectTransform.anchorMax = new Vector2(0f, 0.5f);
             accent.rectTransform.pivot = new Vector2(0f, 0.5f);
-            accent.rectTransform.anchoredPosition = Vector2.zero;
-            accent.rectTransform.sizeDelta = new Vector2(7f, 0f);
+            accent.rectTransform.anchoredPosition = new Vector2(8f, 0f);
+            accent.rectTransform.sizeDelta = new Vector2(6f, 104f);
+            UiKit.Panelize(accent, 3);
 
             // 1行目：日付（大）＋行程（右寄せ・控えめ）
             _dayText = CreateText("Day", _card, 34, TextAnchor.MiddleLeft);
             _dayText.fontStyle = FontStyle.Bold;
             Anchor(_dayText.rectTransform, new Vector2(0f, 1f), new Vector2(24f, -8f), new Vector2(160f, 40f));
             _dayText.rectTransform.pivot = new Vector2(0f, 1f);
+            UiKit.Outline(_dayText);
 
             _routeText = CreateText("Route", _card, 19, TextAnchor.MiddleRight);
             _routeText.color = DimText;
             Anchor(_routeText.rectTransform, new Vector2(1f, 1f), new Vector2(-16f, -14f), new Vector2(260f, 30f));
             _routeText.rectTransform.pivot = new Vector2(1f, 1f);
 
-            // 2行目：体力バー（背景→追いバー→本体→フラッシュ→数値）
-            RectTransform back = CreateImage("StaminaBack", _card, BarBack).rectTransform;
+            // 2行目：体力バー（背景→追いバー→本体→フラッシュ→数値）。すべてピル形に丸める
+            Image backImage = CreateImage("StaminaBack", _card, BarBack);
+            RectTransform back = backImage.rectTransform;
             Anchor(back, new Vector2(0f, 1f), new Vector2(22f, -54f), new Vector2(BarWidth, BarHeight));
             back.pivot = new Vector2(0f, 1f);
+            UiKit.Panelize(backImage, 14);
 
-            _trail = LeftFill(CreateImage("StaminaTrail", back, TrailColor).rectTransform);
-            _fillImage = CreateImage("StaminaFill", back, BarHigh);
+            _trail = LeftFill(UiKit.Panelize(CreateImage("StaminaTrail", back, TrailColor), 13).rectTransform);
+            _fillImage = UiKit.Panelize(CreateImage("StaminaFill", back, BarHigh), 13);
             _fill = LeftFill(_fillImage.rectTransform);
-            _flashImage = CreateImage("StaminaFlash", back, new Color(1f, 1f, 1f, 0f));
+            _flashImage = UiKit.Panelize(CreateImage("StaminaFlash", back, new Color(1f, 1f, 1f, 0f)), 13);
             LeftFill(_flashImage.rectTransform);
 
             _staminaLabel = CreateText("StaminaValue", back, 20, TextAnchor.MiddleRight);
             _staminaLabel.fontStyle = FontStyle.Bold;
+            UiKit.Outline(_staminaLabel);
             _staminaLabel.rectTransform.anchorMin = Vector2.zero;
             _staminaLabel.rectTransform.anchorMax = Vector2.one;
             _staminaLabel.rectTransform.offsetMin = new Vector2(0f, 0f);
@@ -199,14 +206,10 @@ namespace TrainSurvival.Game
             _prompt.rectTransform.pivot = new Vector2(0.5f, 0f);
             _prompt.rectTransform.anchoredPosition = new Vector2(0f, 70f);
             _prompt.rectTransform.sizeDelta = new Vector2(500f, 32f);
+            UiKit.Outline(_prompt);
 
-            Text crosshair = CreateText("Crosshair", root, 26, TextAnchor.MiddleCenter);
-            crosshair.text = "+";
-            crosshair.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-            crosshair.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-            crosshair.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            crosshair.rectTransform.anchoredPosition = Vector2.zero;
-            crosshair.rectTransform.sizeDelta = new Vector2(40f, 40f);
+            // 中央：ドット＋ティックのクロスヘア（"+"文字をやめる）
+            UiKit.Crosshair(root, new Color(1f, 1f, 1f, 0.85f));
             // ※日替わり・ゲームオーバーの演出は CutInView が担当（ここは常時HUDのみ）
         }
 

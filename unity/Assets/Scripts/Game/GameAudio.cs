@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace TrainSurvival.Game
 {
@@ -15,21 +17,39 @@ namespace TrainSurvival.Game
     {
         public enum Sfx { Departure, Ding, Sit, Coffee, GameOver, Arrive, Bell, TrainDeparture, TrainStop, Horn, Heart }
 
+        [System.Serializable]
+        public struct CueTuning
+        {
+            [Min(0f)] public float startTime;
+            [Min(0f)] public float duration;
+            [Min(0f)] public float volumeScale;
+            [Min(0f)] public float fadeOutSeconds;
+        }
+
         private const string BgmVolumeKey = "BgmVolume";
         private const string SeVolumeKey = "SeVolume";
 
         private static GameAudio _instance;
 
         private AudioSource _bgmSource;
+        private AudioSource _trainSource;
+        private AudioSource _stationSource;
         private AudioSource _heartSource;
         private AudioSource[] _sePool;
         private int _seIndex;
         private float _bgmVolume;
         private float _seVolume;
-        private bool _heartRequested;
+        private float _trainTargetVolume;
+        private float _trainPitch = 1f;
+        private float _trainFadeSeconds = 0.45f;
+        private float _heartIntensity;
         [SerializeField] private bool _debugLogging;
         private readonly Dictionary<Sfx, AudioClip> _clips = new Dictionary<Sfx, AudioClip>();
+        private readonly Dictionary<Sfx, CueTuning> _cueTunings = new Dictionary<Sfx, CueTuning>();
         private readonly Dictionary<Sfx, float> _lastPlayedAt = new Dictionary<Sfx, float>();
+        private readonly Dictionary<AudioSource, int> _sourceTokens = new Dictionary<AudioSource, int>();
+        private readonly string[] _debugEvents = new string[8];
+        private int _debugEventIndex;
 
         public static GameAudio Instance
         {
@@ -83,6 +103,16 @@ namespace TrainSurvival.Game
             _bgmSource.playOnAwake = false;
             _bgmSource.volume = _bgmVolume;
 
+            _trainSource = gameObject.AddComponent<AudioSource>();
+            _trainSource.loop = true;
+            _trainSource.playOnAwake = false;
+            _trainSource.volume = 0f;
+
+            _stationSource = gameObject.AddComponent<AudioSource>();
+            _stationSource.loop = false;
+            _stationSource.playOnAwake = false;
+            _stationSource.volume = _seVolume;
+
             _heartSource = gameObject.AddComponent<AudioSource>();
             _heartSource.loop = true;
             _heartSource.playOnAwake = false;
@@ -100,6 +130,12 @@ namespace TrainSurvival.Game
         /// <summary>SE 再生。Resources/Audio の実ファイル優先、無ければ合成音。</summary>
         public void Play(Sfx sfx, float pitch = 1f)
         {
+            if (IsTransportCue(sfx))
+            {
+                PlayTransportCue(sfx, pitch);
+                return;
+            }
+
             AudioClip clip = GetClip(sfx);
             if (clip == null)
             {
@@ -117,10 +153,12 @@ namespace TrainSurvival.Game
 
             AudioSource src = _sePool[_seIndex];
             _seIndex = (_seIndex + 1) % _sePool.Length;
-            src.pitch = pitch;
-            src.volume = _seVolume;
-            src.PlayOneShot(clip, 1f);
-            Log($"play {sfx} clip={clip.name} pitch={pitch:0.00} vol={_seVolume:0.00}");
+            CueTuning tuning = GetCueTuning(sfx);
+            // 呼び出し側がピッチ指定なし（=1）のときだけ、軽い揺らぎで単調さを消す
+            src.pitch = Mathf.Approximately(pitch, 1f) ? PitchJitter(sfx) : pitch;
+            src.volume = _seVolume * Mathf.Max(0f, tuning.volumeScale);
+            PlaySource(src, clip, tuning, false);
+            Log($"play {sfx} clip={clip.name} pitch={pitch:0.00} vol={src.volume:0.00}");
         }
 
         /// <summary>シーンに直接置いた AudioClip を SE として登録する（Resources 外の素材用）。</summary>
@@ -137,10 +175,64 @@ namespace TrainSurvival.Game
             }
         }
 
-        /// <summary>赤ゲージ中だけ鳴る心音ループ。音量は Update でなめらかに追従する。</summary>
+        /// <summary>SEごとの再生位置・再生時間・音量倍率。Play中に呼び直せる。</summary>
+        public void ConfigureCue(Sfx sfx, CueTuning tuning)
+        {
+            tuning.startTime = Mathf.Max(0f, tuning.startTime);
+            tuning.duration = Mathf.Max(0f, tuning.duration);
+            tuning.volumeScale = Mathf.Max(0f, tuning.volumeScale <= 0f ? 1f : tuning.volumeScale);
+            tuning.fadeOutSeconds = Mathf.Max(0f, tuning.fadeOutSeconds);
+            _cueTunings[sfx] = tuning;
+            if (sfx == Sfx.TrainDeparture && _trainSource != null && _trainSource.isPlaying && _trainTargetVolume > 0f)
+            {
+                _trainFadeSeconds = tuning.fadeOutSeconds > 0f ? tuning.fadeOutSeconds : 0.45f;
+                _trainTargetVolume = _seVolume * Mathf.Max(0f, tuning.volumeScale);
+            }
+        }
+
+        /// <summary>心音の強さ(0..1)。黄色ゲージから入り、倒れる直前へ向けてピークにする。</summary>
+        public void SetHeartbeat(float intensity)
+        {
+            _heartIntensity = Mathf.Clamp01(intensity);
+        }
+
+        /// <summary>既存呼び出し用。true は最大強度として扱う。</summary>
         public void SetHeartbeat(bool active)
         {
-            _heartRequested = active;
+            SetHeartbeat(active ? 1f : 0f);
+        }
+
+        /// <summary>電車の走行ループを状態として管理する。発車でON、停車入りでOFF。</summary>
+        public void SetTrainMoving(bool moving, float pitch = 1f)
+        {
+            CueTuning tuning = GetCueTuning(Sfx.TrainDeparture);
+            _trainPitch = pitch;
+            _trainFadeSeconds = tuning.fadeOutSeconds > 0f ? tuning.fadeOutSeconds : 0.45f;
+            _trainTargetVolume = moving ? _seVolume * Mathf.Max(0f, tuning.volumeScale) : 0f;
+
+            if (!moving)
+            {
+                Log("train loop fade out");
+                return;
+            }
+
+            AudioClip clip = GetClip(Sfx.TrainDeparture);
+            if (clip == null || _trainSource == null)
+            {
+                return;
+            }
+            if (_trainSource.clip != clip)
+            {
+                _trainSource.clip = clip;
+            }
+            _trainSource.pitch = _trainPitch;
+            if (!_trainSource.isPlaying)
+            {
+                _trainSource.volume = 0f;
+                SetStartTime(_trainSource, clip, tuning.startTime);
+                _trainSource.Play();
+                Log($"train loop fade in clip={clip.name} pitch={pitch:0.00}");
+            }
         }
 
         /// <summary>Play中にGameAudioを選んでInspectorからONにすると、SEの鳴り方をConsoleへ出す。</summary>
@@ -170,6 +262,13 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
+            Keyboard kb = Keyboard.current;
+            if (kb != null && kb.f9Key.wasPressedThisFrame)
+            {
+                DebugLogging = !DebugLogging;
+                Log(_debugLogging ? "debug overlay on" : "debug overlay off");
+            }
+            UpdateTrainLoop();
             UpdateHeartbeat();
         }
 
@@ -195,6 +294,30 @@ namespace TrainSurvival.Game
                     _sePool[i].volume = _seVolume;
                 }
             }
+            if (_stationSource != null)
+            {
+                _stationSource.volume = _seVolume;
+            }
+            _trainTargetVolume = _trainSource != null && _trainSource.isPlaying && _trainTargetVolume > 0f
+                ? _seVolume * Mathf.Max(0f, GetCueTuning(Sfx.TrainDeparture).volumeScale)
+                : _trainTargetVolume;
+        }
+
+        private void UpdateTrainLoop()
+        {
+            if (_trainSource == null)
+            {
+                return;
+            }
+
+            _trainSource.pitch = _trainPitch;
+            float fade = Mathf.Max(0.01f, _trainFadeSeconds);
+            _trainSource.volume = Mathf.MoveTowards(_trainSource.volume, _trainTargetVolume, Time.unscaledDeltaTime / fade);
+            if (_trainSource.isPlaying && _trainTargetVolume <= 0f && _trainSource.volume <= 0.001f)
+            {
+                _trainSource.Stop();
+                Log("train loop stopped");
+            }
         }
 
         private void UpdateHeartbeat()
@@ -209,9 +332,11 @@ namespace TrainSurvival.Game
                 _heartSource.clip = clip;
             }
 
-            float target = _heartRequested ? _seVolume * 0.72f : 0f;
-            _heartSource.volume = Mathf.MoveTowards(_heartSource.volume, target, Time.unscaledDeltaTime * 0.9f);
-            _heartSource.pitch = 0.96f + 0.05f * Mathf.Sin(Time.unscaledTime * 2.2f);
+            float target = _heartIntensity > 0f ? _seVolume * Mathf.Lerp(0.18f, 0.92f, _heartIntensity) : 0f;
+            float fadeSpeed = _heartIntensity > 0f ? Mathf.Lerp(0.35f, 1.35f, _heartIntensity) : 1.3f;
+            _heartSource.volume = Mathf.MoveTowards(_heartSource.volume, target, Time.unscaledDeltaTime * fadeSpeed);
+            _heartSource.pitch = 0.92f + 0.14f * _heartIntensity
+                + 0.05f * Mathf.Sin(Time.unscaledTime * Mathf.Lerp(1.8f, 3.2f, _heartIntensity));
 
             if (_heartSource.volume > 0.001f)
             {
@@ -226,6 +351,157 @@ namespace TrainSurvival.Game
                 _heartSource.Stop();
                 Log("heartbeat fade out");
             }
+        }
+
+        private void PlayTransportCue(Sfx sfx, float pitch)
+        {
+            if (sfx == Sfx.TrainDeparture)
+            {
+                SetTrainMoving(true, pitch);
+                return;
+            }
+            if (sfx == Sfx.TrainStop)
+            {
+                SetTrainMoving(false);
+            }
+
+            AudioClip clip = GetClip(sfx);
+            if (clip == null || _stationSource == null)
+            {
+                return;
+            }
+
+            float now = Time.unscaledTime;
+            float interval = MinimumRepeatInterval(sfx);
+            if (_lastPlayedAt.TryGetValue(sfx, out float last) && now - last < interval)
+            {
+                Log($"skip {sfx} ({now - last:0.00}s < {interval:0.00}s)");
+                return;
+            }
+            _lastPlayedAt[sfx] = now;
+
+            _stationSource.Stop();
+            _stationSource.clip = clip;
+            CueTuning tuning = GetCueTuning(sfx);
+            _stationSource.pitch = pitch;
+            _stationSource.volume = _seVolume * Mathf.Max(0f, tuning.volumeScale);
+            PlaySource(_stationSource, clip, tuning, false);
+            Log($"transport {sfx} clip={clip.name} pitch={pitch:0.00} vol={_stationSource.volume:0.00}");
+        }
+
+        private static bool IsTransportCue(Sfx sfx)
+        {
+            return sfx == Sfx.Arrive
+                || sfx == Sfx.Bell
+                || sfx == Sfx.TrainDeparture
+                || sfx == Sfx.TrainStop;
+        }
+
+        private CueTuning GetCueTuning(Sfx sfx)
+        {
+            if (_cueTunings.TryGetValue(sfx, out CueTuning tuning))
+            {
+                return tuning;
+            }
+
+            // 既定のミックス。頻繁に鳴る・環境的な音は控えめにし、決め所（発車ベル/着席/倒れる）を立てる
+            float vol;
+            switch (sfx)
+            {
+                case Sfx.TrainDeparture: vol = 0.5f; break;  // 走行ループは床鳴りとして薄く
+                case Sfx.Horn: vol = 0.45f; break;           // クラクションは遠景として控えめ
+                case Sfx.Ding: vol = 0.75f; break;
+                case Sfx.Arrive: vol = 0.8f; break;
+                case Sfx.TrainStop: vol = 0.8f; break;
+                case Sfx.Bell: vol = 0.9f; break;            // 発車ベルは決め所なので前へ
+                case Sfx.Coffee: vol = 0.9f; break;
+                case Sfx.Sit: vol = 1f; break;               // 「座れた！」は一番気持ちよく
+                case Sfx.GameOver: vol = 1f; break;
+                default: vol = 1f; break;
+            }
+
+            return new CueTuning
+            {
+                startTime = 0f,
+                duration = 0f,
+                volumeScale = vol,
+                fadeOutSeconds = 0.05f,
+            };
+        }
+
+        /// <summary>連射しても機械的に聞こえないよう、繰り返し系の一発物へ軽いピッチ揺らぎを与える。</summary>
+        private static float PitchJitter(Sfx sfx)
+        {
+            switch (sfx)
+            {
+                case Sfx.Sit:
+                case Sfx.Coffee:
+                case Sfx.Ding:
+                case Sfx.Horn:
+                    return 1f + Random.Range(-0.04f, 0.04f);
+                default:
+                    return 1f;
+            }
+        }
+
+        private void PlaySource(AudioSource source, AudioClip clip, CueTuning tuning, bool loop)
+        {
+            source.Stop();
+            source.clip = clip;
+            source.loop = loop;
+            SetStartTime(source, clip, tuning.startTime);
+            source.Play();
+
+            int token = NextSourceToken(source);
+            if (tuning.duration > 0f)
+            {
+                StartCoroutine(StopSourceAfter(source, token, tuning.duration, tuning.fadeOutSeconds));
+            }
+        }
+
+        private int NextSourceToken(AudioSource source)
+        {
+            _sourceTokens.TryGetValue(source, out int token);
+            token++;
+            _sourceTokens[source] = token;
+            return token;
+        }
+
+        private IEnumerator StopSourceAfter(AudioSource source, int token, float delay, float fadeOut)
+        {
+            yield return new WaitForSecondsRealtime(delay);
+            if (source == null
+                || !_sourceTokens.TryGetValue(source, out int current)
+                || current != token
+                || !source.isPlaying)
+            {
+                yield break;
+            }
+
+            if (fadeOut > 0f)
+            {
+                float start = source.volume;
+                float t = 0f;
+                while (t < 1f && source != null && source.isPlaying)
+                {
+                    t = Mathf.Min(1f, t + Time.unscaledDeltaTime / fadeOut);
+                    source.volume = Mathf.Lerp(start, 0f, t);
+                    yield return null;
+                }
+            }
+            if (source != null && _sourceTokens.TryGetValue(source, out current) && current == token)
+            {
+                source.Stop();
+            }
+        }
+
+        private static void SetStartTime(AudioSource source, AudioClip clip, float startTime)
+        {
+            if (source == null || clip == null || startTime <= 0f)
+            {
+                return;
+            }
+            source.time = Mathf.Min(startTime, Mathf.Max(0f, clip.length - 0.01f));
         }
 
         private AudioClip GetClip(Sfx sfx)
@@ -317,8 +593,68 @@ namespace TrainSurvival.Game
         {
             if (_debugLogging)
             {
+                _debugEvents[_debugEventIndex % _debugEvents.Length] = $"{Time.unscaledTime:0.0}s  {message}";
+                _debugEventIndex++;
                 Debug.Log("[GameAudio] " + message, this);
             }
+        }
+
+        private void OnGUI()
+        {
+            if (!_debugLogging)
+            {
+                return;
+            }
+
+            GUILayout.BeginArea(new Rect(14f, 14f, 460f, 272f), "Audio Debug (F9)", GUI.skin.window);
+            GUILayout.Label($"BGM {_bgmVolume:0.00}  SE {_seVolume:0.00}");
+            GUILayout.Label(SourceLine("TrainLoop", _trainSource, _trainTargetVolume));
+            GUILayout.Label(SourceLine("Station", _stationSource, 0f));
+            GUILayout.Label(SourceLine("Heart", _heartSource, _heartIntensity > 0f ? _seVolume * Mathf.Lerp(0.18f, 0.92f, _heartIntensity) : 0f));
+            GUILayout.Label($"Heart intensity {_heartIntensity:0.00}");
+            GUILayout.Label($"SE Pool active {ActiveSeCount()}/{(_sePool != null ? _sePool.Length : 0)}");
+            GUILayout.Space(4f);
+            GUILayout.Label("Recent");
+            int count = Mathf.Min(_debugEventIndex, _debugEvents.Length);
+            for (int i = 0; i < count; i++)
+            {
+                int index = (_debugEventIndex - 1 - i + _debugEvents.Length) % _debugEvents.Length;
+                string line = _debugEvents[index];
+                if (!string.IsNullOrEmpty(line))
+                {
+                    GUILayout.Label(line);
+                }
+            }
+            GUILayout.EndArea();
+        }
+
+        private int ActiveSeCount()
+        {
+            if (_sePool == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            for (int i = 0; i < _sePool.Length; i++)
+            {
+                if (_sePool[i] != null && _sePool[i].isPlaying)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private static string SourceLine(string label, AudioSource source, float target)
+        {
+            if (source == null)
+            {
+                return $"{label}: none";
+            }
+            string clip = source.clip != null ? source.clip.name : "(no clip)";
+            string state = source.isPlaying ? "play" : "stop";
+            return $"{label}: {state} {clip} vol {source.volume:0.00}->{target:0.00} pitch {source.pitch:0.00}";
         }
 
         // ---- 合成音（素材が届くまでの仮。それっぽさ優先の簡易シンセ） ----

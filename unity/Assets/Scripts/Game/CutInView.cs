@@ -228,45 +228,45 @@ namespace TrainSurvival.Game
             var resultRect = resultGo.GetComponent<RectTransform>();
             resultRect.SetParent(_overRoot, false);
             resultRect.anchoredPosition = new Vector2(0f, -40f);
-            resultRect.sizeDelta = new Vector2(1000f, 420f);
+            resultRect.sizeDelta = new Vector2(1240f, 560f);
             _resultGroup = resultGo.GetComponent<CanvasGroup>();
 
             // 札（行先表示風：濃紺地にオレンジ枠）
             var plate = new GameObject("Plate", typeof(RectTransform)).GetComponent<RectTransform>();
             plate.SetParent(resultRect, false);
-            plate.anchoredPosition = new Vector2(0f, 150f);
+            plate.anchoredPosition = new Vector2(0f, 214f);
             Image plateFrame = CreateImage("Frame", plate, new Color(0.82f, 0.16f, 0.12f));
-            plateFrame.rectTransform.sizeDelta = new Vector2(420f, 92f);
+            plateFrame.rectTransform.sizeDelta = new Vector2(520f, 112f);
             Image plateBody = CreateImage("Body", plate, new Color(0.10f, 0.12f, 0.18f));
-            plateBody.rectTransform.sizeDelta = new Vector2(408f, 80f);
-            Text plateText = CreateText("Text", plate, 40, TextAnchor.MiddleCenter);
+            plateBody.rectTransform.sizeDelta = new Vector2(506f, 98f);
+            Text plateText = CreateText("Text", plate, 48, TextAnchor.MiddleCenter);
             plateText.text = "過 労 警 報";
             plateText.color = new Color(0.95f, 0.93f, 0.88f);
             plateText.fontStyle = FontStyle.Bold;
-            plateText.rectTransform.sizeDelta = new Vector2(408f, 80f);
+            plateText.rectTransform.sizeDelta = new Vector2(506f, 98f);
 
-            _resultHeadline = CreateText("Headline", resultRect, 48, TextAnchor.MiddleCenter);
+            _resultHeadline = CreateText("Headline", resultRect, 64, TextAnchor.MiddleCenter);
             _resultHeadline.color = new Color(0.95f, 0.93f, 0.88f);
             _resultHeadline.fontStyle = FontStyle.Bold;
-            _resultHeadline.rectTransform.anchoredPosition = new Vector2(0f, 55f);
-            _resultHeadline.rectTransform.sizeDelta = new Vector2(1000f, 64f);
+            _resultHeadline.rectTransform.anchoredPosition = new Vector2(0f, 92f);
+            _resultHeadline.rectTransform.sizeDelta = new Vector2(1180f, 84f);
 
-            _resultSub = CreateText("Sub", resultRect, 32, TextAnchor.MiddleCenter);
+            _resultSub = CreateText("Sub", resultRect, 38, TextAnchor.MiddleCenter);
             _resultSub.color = new Color(1f, 1f, 1f, 0.65f);
-            _resultSub.rectTransform.anchoredPosition = new Vector2(0f, 0f);
-            _resultSub.rectTransform.sizeDelta = new Vector2(1000f, 42f);
+            _resultSub.rectTransform.anchoredPosition = new Vector2(0f, 22f);
+            _resultSub.rectTransform.sizeDelta = new Vector2(1180f, 50f);
 
-            CreateGameOverButton("Retry", resultRect, new Vector2(-230f, -92f), new Vector2(300f, 64f),
-                "もう一度出勤する", new Color(0.075f, 0.085f, 0.12f, 0.96f), () => _onRestart?.Invoke());
-            CreateGameOverButton("Title", resultRect, new Vector2(105f, -92f), new Vector2(230f, 64f),
-                "タイトルへ", new Color(0.055f, 0.065f, 0.095f, 0.96f), LoadTitle);
-            CreateGameOverButton("Ranking", resultRect, new Vector2(365f, -92f), new Vector2(230f, 64f),
-                "ランキング", new Color(0.055f, 0.065f, 0.095f, 0.96f), ShowRankingPlaceholder);
+            CreateGameOverButton("Retry", resultRect, new Vector2(-355f, -108f), new Vector2(330f, 84f),
+                "社畜に戻る\nリトライ", new Color(0.075f, 0.085f, 0.12f, 0.96f), () => _onRestart?.Invoke());
+            CreateGameOverButton("Title", resultRect, new Vector2(0f, -108f), new Vector2(330f, 84f),
+                "仕事を辞める\nタイトルへ", new Color(0.055f, 0.065f, 0.095f, 0.96f), LoadTitle);
+            CreateGameOverButton("Ranking", resultRect, new Vector2(355f, -108f), new Vector2(330f, 84f),
+                "社畜ランキング", new Color(0.055f, 0.065f, 0.095f, 0.96f), ShowRankingPlaceholder);
 
             Text hint = CreateText("Hint", resultRect, 20, TextAnchor.MiddleCenter);
             hint.text = "R でもリトライ";
             hint.color = new Color(1f, 1f, 1f, 0.45f);
-            hint.rectTransform.anchoredPosition = new Vector2(0f, -140f);
+            hint.rectTransform.anchoredPosition = new Vector2(0f, -180f);
             hint.rectTransform.sizeDelta = new Vector2(600f, 28f);
 
             _overRoot.gameObject.SetActive(false);
@@ -305,10 +305,11 @@ namespace TrainSurvival.Game
             stripe.rectTransform.anchoredPosition = Vector2.zero;
             stripe.rectTransform.sizeDelta = new Vector2(7f, 0f);
 
-            Text buttonText = CreateText("Text", buttonRect, 26, TextAnchor.MiddleCenter);
+            Text buttonText = CreateText("Text", buttonRect, 28, TextAnchor.MiddleCenter);
             buttonText.text = label;
             buttonText.color = color.grayscale > 0.5f ? SignInk : Color.white;
             buttonText.fontStyle = FontStyle.Bold;
+            buttonText.lineSpacing = 0.86f;
             Stretch(buttonText.rectTransform);
         }
 

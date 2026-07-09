@@ -13,7 +13,8 @@ namespace TrainSurvival.Game
         [SerializeField] private float _max = 100f;
         [SerializeField] private float _drainPerSecond = 3f;
         [SerializeField] private float _recoverPerSecond = 1f;
-        [SerializeField] private float _dangerHeartbeatThreshold = 0.25f;
+        [SerializeField] private float _heartbeatFadeInThreshold = 0.5f;
+        [SerializeField] private float _heartbeatPeakThreshold = 0.05f;
 
         private PlayerSit _sit;
         private float _current;
@@ -52,7 +53,23 @@ namespace TrainSurvival.Game
             // 座っても回復は微々たるもの。立ちの消耗が主で、ランは長くは続かない。
             float perSecond = _sit != null && _sit.IsSeated ? _recoverPerSecond : -_drainPerSecond * DrainMultiplier;
             _current = Mathf.Clamp(_current + perSecond * Time.deltaTime, 0f, _max);
-            GameAudio.Instance.SetHeartbeat(_current > 0f && Normalized <= _dangerHeartbeatThreshold);
+            GameAudio.Instance.SetHeartbeat(HeartbeatIntensity());
+        }
+
+        private float HeartbeatIntensity()
+        {
+            if (_current <= 0f)
+            {
+                return 0f;
+            }
+
+            float fadeIn = Mathf.Clamp01(_heartbeatFadeInThreshold);
+            float peak = Mathf.Clamp01(_heartbeatPeakThreshold);
+            if (fadeIn <= peak)
+            {
+                fadeIn = Mathf.Min(1f, peak + 0.01f);
+            }
+            return Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(fadeIn, peak, Normalized));
         }
 
         private void OnDisable()

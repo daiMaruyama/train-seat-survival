@@ -50,6 +50,17 @@ namespace TrainSurvival.Game
         [SerializeField] private AudioClip _heartClip;
         [SerializeField] private Vector2 _hornIntervalRange = new Vector2(8f, 18f);
 
+        [Header("音タイミング（Play中にInspectorで調整）")]
+        [SerializeField] private GameAudio.CueTuning _trainStopCue = new GameAudio.CueTuning { volumeScale = 1f, fadeOutSeconds = 0.08f };
+        [SerializeField] private GameAudio.CueTuning _arriveCue = new GameAudio.CueTuning { volumeScale = 1f, fadeOutSeconds = 0.08f };
+        [SerializeField] private GameAudio.CueTuning _bellCue = new GameAudio.CueTuning { volumeScale = 1f, fadeOutSeconds = 0.08f };
+        [SerializeField] private GameAudio.CueTuning _trainRunCue = new GameAudio.CueTuning { volumeScale = 0.62f, fadeOutSeconds = 0.45f };
+        [SerializeField] private GameAudio.CueTuning _hornCue = new GameAudio.CueTuning { volumeScale = 1f, fadeOutSeconds = 0.04f };
+        [SerializeField] private float _trainStopToArriveDelay = 0.25f;
+        [SerializeField] private float _arriveToDoorOpenDelay = 0f;
+        [SerializeField] private float _bellToDoorCloseDelay = 0.7f;
+        [SerializeField] private float _bellToDepartureDelay = 0.9f;
+
         [Header("乗客チューニング（次の乗降・座り直しから反映）")]
         [SerializeField] private float _passengerScale = 0.72f;   // 身長スケール（素モデル約2.5m→0.72で約1.8m）
         [SerializeField] private float _passengerStandY = 0f;     // 立ちの上下微調整（＋で浮く）
@@ -111,6 +122,8 @@ namespace TrainSurvival.Game
             MovePlayerToDoorFront();
             _stationTimer = _secondsPerStation;
             ResetHornTimer();
+            ApplyAudioTuning();
+            GameAudio.Instance.SetTrainMoving(true);
         }
 
         /// <summary>1本ぶんの電車（レグ）を満員状態で組む。乗り換えのたびに新しい seed で呼び直す。</summary>
@@ -143,6 +156,7 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
+            ApplyAudioTuning();
             if (Time.timeScale <= 0f || _transitioning)
             {
                 return; // 倒れて停止中／日替わり演出中は駅を進めない
@@ -169,6 +183,7 @@ namespace TrainSurvival.Game
         private IEnumerator StationStopRoutine()
         {
             _atStation = true;
+            ApplyAudioTuning();
             GameAudio.Instance.Play(GameAudio.Sfx.TrainStop, Random.Range(0.96f, 1.04f));
             while (_trainSpeed > 0.001f)
             {
@@ -176,23 +191,27 @@ namespace TrainSurvival.Game
                 yield return null;
             }
             _trainSpeed = 0f;
-            float stopTail = ClipTail(_trainStopClip, _brakeTime, 0.25f, 1.2f);
-            if (stopTail > 0f)
+            if (_trainStopToArriveDelay > 0f)
             {
-                yield return new WaitForSeconds(stopTail);
+                yield return WaitTunable(() => _trainStopToArriveDelay);
             }
+            ApplyAudioTuning();
             GameAudio.Instance.Play(GameAudio.Sfx.Arrive); // 到着音＋環境音
+            if (_arriveToDoorOpenDelay > 0f)
+            {
+                yield return WaitTunable(() => _arriveToDoorOpenDelay);
+            }
             _car.SetDoorsOpen(true);
 
             AdvanceStation(); // 降りる→席が空く→乗ってくる（すべて停車中）
             yield return new WaitForSeconds(_stationDwell);
 
+            ApplyAudioTuning();
             GameAudio.Instance.Play(GameAudio.Sfx.Bell); // 発車ベル＋ドア
-            float bellWait = ClipWait(_bellClip, 0.9f, 3.2f);
-            float closeDelay = Mathf.Min(0.7f, bellWait * 0.35f);
-            yield return new WaitForSeconds(closeDelay);
+            yield return WaitTunable(() => _bellToDoorCloseDelay);
             _car.SetDoorsOpen(false);
-            yield return new WaitForSeconds(Mathf.Max(0f, bellWait - closeDelay));
+            yield return WaitTunable(() => _bellToDepartureDelay);
+            ApplyAudioTuning();
             GameAudio.Instance.Play(GameAudio.Sfx.TrainDeparture, Random.Range(0.98f, 1.03f)); // 電車発車
             _stationTimer = _secondsPerStation;
             _atStation = false; // Update 側で加速していく
@@ -208,6 +227,17 @@ namespace TrainSurvival.Game
             audio.RegisterClip(GameAudio.Sfx.TrainStop, _trainStopClip);
             audio.RegisterClip(GameAudio.Sfx.Horn, _hornClip);
             audio.RegisterClip(GameAudio.Sfx.Heart, _heartClip);
+            ApplyAudioTuning();
+        }
+
+        private void ApplyAudioTuning()
+        {
+            GameAudio audio = GameAudio.Instance;
+            audio.ConfigureCue(GameAudio.Sfx.TrainStop, _trainStopCue);
+            audio.ConfigureCue(GameAudio.Sfx.Arrive, _arriveCue);
+            audio.ConfigureCue(GameAudio.Sfx.Bell, _bellCue);
+            audio.ConfigureCue(GameAudio.Sfx.TrainDeparture, _trainRunCue);
+            audio.ConfigureCue(GameAudio.Sfx.Horn, _hornCue);
         }
 
         private void MaybePlayHorn()
@@ -223,6 +253,7 @@ namespace TrainSurvival.Game
                 return;
             }
 
+            ApplyAudioTuning();
             GameAudio.Instance.Play(GameAudio.Sfx.Horn, Random.Range(0.92f, 1.08f));
             ResetHornTimer();
         }
@@ -232,6 +263,16 @@ namespace TrainSurvival.Game
             float min = Mathf.Max(1f, Mathf.Min(_hornIntervalRange.x, _hornIntervalRange.y));
             float max = Mathf.Max(min, Mathf.Max(_hornIntervalRange.x, _hornIntervalRange.y));
             _hornTimer = Random.Range(min, max);
+        }
+
+        private static IEnumerator WaitTunable(System.Func<float> seconds)
+        {
+            float elapsed = 0f;
+            while (elapsed < Mathf.Max(0f, seconds()))
+            {
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
         }
 
         /// <summary>空席（今すぐ座れる席）を常時light-upさせる。狙い色は PlayerSit がマーカーに直接付ける。</summary>
@@ -363,20 +404,6 @@ namespace TrainSurvival.Game
             {
                 controller.enabled = wasEnabled;
             }
-        }
-
-        private static float ClipWait(AudioClip clip, float fallback, float max)
-        {
-            return clip != null ? Mathf.Min(max, Mathf.Max(fallback, clip.length)) : fallback;
-        }
-
-        private static float ClipTail(AudioClip clip, float alreadyPlayed, float overlap, float max)
-        {
-            if (clip == null)
-            {
-                return 0f;
-            }
-            return Mathf.Min(max, Mathf.Max(0f, clip.length - alreadyPlayed - overlap));
         }
 
         /// <summary>車内の乗客を全撤去してプールへ返す（車両ジオメトリはそのまま）。</summary>
