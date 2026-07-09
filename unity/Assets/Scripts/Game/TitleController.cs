@@ -62,6 +62,7 @@ namespace TrainSurvival.Game
         private RectTransform _highlight;
         private float _highlightWidth;
         private RectTransform _ticker;
+        private float _tickerCycleWidth = 1600f;
         private RectTransform _startButton;
         private RectTransform _rankingButton;
         private CanvasGroup _fade;
@@ -94,7 +95,7 @@ namespace TrainSurvival.Game
             // LED運行案内のスクロール
             if (_ticker != null)
             {
-                _ticker.anchoredPosition = new Vector2(-Mathf.Repeat(t * 90f, 1600f), 0f);
+                _ticker.anchoredPosition = new Vector2(-Mathf.Repeat(t * 90f, _tickerCycleWidth), 0f);
             }
 
             // ごく浅いカメラの呼吸（酔わない範囲）
@@ -616,13 +617,28 @@ namespace TrainSurvival.Game
             _ticker.anchorMin = new Vector2(0f, 0.5f);
             _ticker.anchorMax = new Vector2(0f, 0.5f);
             _ticker.pivot = new Vector2(0f, 0.5f);
-            _ticker.sizeDelta = new Vector2(3200f, 52f);
+            _ticker.sizeDelta = new Vector2(6400f, 52f);
 
-            Text ticker = CreateText("Text", _ticker, 24, TextAnchor.MiddleLeft);
             const string unit = "◆ 空席を見つけて座り、社畜人生を生き延びろ　◆ 毎日お疲れ様です、ご自愛ください　";
-            ticker.text = unit + unit + unit;
-            ticker.color = Amber;
-            Stretch(ticker.rectTransform);
+            Text measure = CreateText("Measure", _ticker, 24, TextAnchor.MiddleLeft);
+            measure.text = unit;
+            measure.enabled = false;
+            const float overlap = 18f;
+            _tickerCycleWidth = Mathf.Max(1f, Mathf.Ceil(measure.preferredWidth) - overlap);
+            Destroy(measure.gameObject);
+
+            _ticker.sizeDelta = new Vector2(_tickerCycleWidth * 4f, 52f);
+            for (int i = 0; i < 4; i++)
+            {
+                Text ticker = CreateText($"Text_{i}", _ticker, 24, TextAnchor.MiddleLeft);
+                ticker.text = unit;
+                ticker.color = Amber;
+                ticker.rectTransform.anchorMin = new Vector2(0f, 0.5f);
+                ticker.rectTransform.anchorMax = new Vector2(0f, 0.5f);
+                ticker.rectTransform.pivot = new Vector2(0f, 0.5f);
+                ticker.rectTransform.anchoredPosition = new Vector2(_tickerCycleWidth * i, 0f);
+                ticker.rectTransform.sizeDelta = new Vector2(_tickerCycleWidth + overlap, 52f);
+            }
         }
 
         private void BuildVolumePanel(RectTransform root)
