@@ -161,6 +161,13 @@ namespace TrainSurvival.Game
             Log($"play {sfx} clip={clip.name} pitch={pitch:0.00} vol={src.volume:0.00}");
         }
 
+        /// <summary>SE クリップの長さ（秒）。演出のタイミング合わせ用。無ければ0。</summary>
+        public float GetClipLength(Sfx sfx)
+        {
+            AudioClip clip = GetClip(sfx);
+            return clip != null ? clip.length : 0f;
+        }
+
         /// <summary>シーンに直接置いた AudioClip を SE として登録する（Resources 外の素材用）。</summary>
         public void RegisterClip(Sfx sfx, AudioClip clip)
         {
@@ -246,16 +253,47 @@ namespace TrainSurvival.Game
             }
         }
 
-        /// <summary>BGM 開始（Resources/Audio/bgm があれば）。既に同じ曲なら何もしない。</summary>
-        public void PlayBgm()
+        /// <summary>
+        /// BGM 開始。clip を渡せばそれを、無ければ Resources/Audio（Title/bgm）→エディタでは Assets/Audio を探す。
+        /// 既に同じ曲を再生中なら何もしない。ループ再生。
+        /// </summary>
+        public void PlayBgm(AudioClip clip = null)
         {
-            var clip = Resources.Load<AudioClip>("Audio/bgm");
-            if (clip == null || _bgmSource.clip == clip && _bgmSource.isPlaying)
+            if (clip == null)
+            {
+                clip = LoadBgmClip();
+            }
+            if (clip == null || (_bgmSource.clip == clip && _bgmSource.isPlaying))
             {
                 return;
             }
             _bgmSource.clip = clip;
+            _bgmSource.loop = true;
+            _bgmSource.volume = _bgmVolume;
             _bgmSource.Play();
+        }
+
+        private static AudioClip LoadBgmClip()
+        {
+            foreach (string n in new[] { "Audio/Title", "Audio/bgm", "Audio/BGM" })
+            {
+                var c = Resources.Load<AudioClip>(n);
+                if (c != null)
+                {
+                    return c;
+                }
+            }
+#if UNITY_EDITOR
+            foreach (string n in new[] { "Title", "bgm", "BGM" })
+            {
+                var c = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/" + n + ".mp3");
+                if (c != null)
+                {
+                    return c;
+                }
+            }
+#endif
+            return null;
         }
 
         public void StopBgm() => _bgmSource.Stop();

@@ -591,7 +591,7 @@ MonoBehaviour:
   _interiorWidth: 3.4
   _wallHeight: 2.4
   _floorDrop: 0.1
-  _spawnCoffeeCups: 1
+  _spawnCoffeeCups: 0
   _coffeeCupHeight: 0.26
   _coffeeFloatY: 1.05
 --- !u!4 &1419756272
@@ -722,6 +722,69 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1465364612
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1465364614}
+  - component: {fileID: 1465364613}
+  m_Layer: 0
+  m_Name: ItemSpawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1465364613
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1465364612}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45b8935dbe9c44a59bec31d234da64e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.ItemSpawner
+  _coffee:
+    label: Coffee
+    prefab: {fileID: -927199367670048503, guid: 382c968cf34f54843970ceadf11f84e1, type: 3}
+    count: 4
+    targetSize: 0.26
+    modelEuler: {x: 0, y: 0, z: 0}
+    kind: 0
+  _glasses:
+    label: Glasses
+    prefab: {fileID: 8301312963732156748, guid: 3d98e0d50baee5b41b8d69f5fd76110a, type: 3}
+    count: 1
+    targetSize: 0.34
+    modelEuler: {x: 0, y: 0, z: 0}
+    kind: 1
+  _floatHeight: 1.05
+  _aisleX: {x: -0.4, y: 0.4}
+  _endMargin: 1.4
+  _minSpacing: 1.1
+  _respawnEachDay: 1
+--- !u!4 &1465364614
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1465364612}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1904752192
 GameObject:
   m_ObjectHideFlags: 0
@@ -791,3 +854,4 @@ SceneRoots:
   - {fileID: 1407492779}
   - {fileID: 1904752194}
   - {fileID: 1440874243}
+  - {fileID: 1465364614}

@@ -34,6 +34,7 @@ namespace TrainSurvival.Game
         [SerializeField] private AnimationClip _getUpClip;
 
         [Header("音素材")]
+        [SerializeField] private AudioClip _bgmClip; // タイトルBGM（未割当でも Assets/Audio/Title を自動検出）
         [SerializeField] private AudioClip _arriveClip;
         [SerializeField] private AudioClip _bellClip;
         [SerializeField] private AudioClip _trainDepartureClip;
@@ -81,6 +82,7 @@ namespace TrainSurvival.Game
             BuildUi();
 
             GameAudio.Instance.Play(GameAudio.Sfx.Arrive, 0.98f);
+            GameAudio.Instance.PlayBgm(_bgmClip); // タイトルBGMをループ再生
             StartCoroutine(EntranceRoutine());
             StartCoroutine(AmbientHornRoutine());
         }
@@ -171,6 +173,7 @@ namespace TrainSurvival.Game
                     yield return null;
                 }
             }
+            GameAudio.Instance.StopBgm(); // タイトルBGMをゲームへ持ち込まない
             SceneManager.LoadScene(_gameSceneName);
         }
 
@@ -616,7 +619,7 @@ namespace TrainSurvival.Game
             _ticker.sizeDelta = new Vector2(3200f, 52f);
 
             Text ticker = CreateText("Text", _ticker, 24, TextAnchor.MiddleLeft);
-            const string unit = "◆ 本日も満員電車です　◆ 空席を見つけて座り、朝を生き延びろ　◆ ドアが閉まります、ご注意ください　";
+            const string unit = "◆ 空席を見つけて座り、社畜人生を生き延びろ　◆ 毎日お疲れ様です、ご自愛ください　";
             ticker.text = unit + unit + unit;
             ticker.color = Amber;
             Stretch(ticker.rectTransform);

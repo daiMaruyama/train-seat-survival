@@ -1,0 +1,219 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace TrainSurvival.Game
+{
+    /// <summary>
+    /// 車内アイテム（コーヒー＝回復／データメガネ＝情報）をプールで管理する生成器。
+    /// ・prefab・個数・大きさは Inspector からシリアライズして差し替え可能（コーヒーは初期4つ等）
+    /// ・毎回作り直さずプールを使い回し、配置だけ「プレイヤーが取れる通路上」でランダム化（高さは固定）
+    /// ・消費されたアイテムは非表示になり、日替わり（Leg 更新）で位置を撒き直して再表示＝それ以上増えない
+    /// モデルの寸法はバウンズから自動正規化し、当たり判定と拾い挙動は生成時に付与する。
+    /// </summary>
+    public sealed class ItemSpawner : MonoBehaviour
+    {
+        public enum ItemKind { Coffee, Glasses }
+
+        [System.Serializable]
+        public sealed class Pool
+        {
+            public string label = "Coffee";
+            public GameObject prefab;
+            [Min(0)] public int count = 4;
+            public float targetSize = 0.26f;      // 見た目の最大寸法（ここへ正規化）
+            public Vector3 modelEuler;            // 置き向きの微調整
+            public ItemKind kind = ItemKind.Coffee;
+        }
+
+        [Header("プール（prefab をアサインしてね）")]
+        [SerializeField] private Pool _coffee = new() { label = "Coffee", count = 4, targetSize = 0.26f, kind = ItemKind.Coffee };
+        [SerializeField] private Pool _glasses = new() { label = "Glasses", count = 1, targetSize = 0.34f, kind = ItemKind.Glasses };
+
+        [Header("配置（プレイヤーが取れる通路上・高さ固定）")]
+        [SerializeField] private float _floatHeight = 1.05f;             // 浮遊高さ（胸元＝視界に入る）
+        [SerializeField] private Vector2 _aisleX = new(-0.4f, 0.4f);     // 通路の左右の振れ幅
+        [SerializeField] private float _endMargin = 1.4f;               // 車端から内側へ空ける距離
+        [SerializeField] private float _minSpacing = 1.1f;              // アイテム同士の最小間隔
+        [SerializeField] private bool _respawnEachDay = true;           // 日替わりで撒き直す
+
+        private CommuteDirector _director;
+        private readonly List<GameObject> _all = new();
+        private float _zMin;
+        private float _zMax;
+        private int _lastLeg = -1;
+        private bool _ready;
+
+        private void Start()
+        {
+            StartCoroutine(BuildWhenReady());
+        }
+
+        private IEnumerator BuildWhenReady()
+        {
+            _director = FindFirstObjectByType<CommuteDirector>();
+            // 車両（座席）が組み上がるまで待つ
+            while (_director == null || _director.SeatCount == 0)
+            {
+                _director = _director != null ? _director : FindFirstObjectByType<CommuteDirector>();
+                yield return null;
+            }
+
+            ComputeAisleRange();
+            BuildPool(_coffee);
+            BuildPool(_glasses);
+            RepositionAll();
+            _lastLeg = _director.Leg;
+            _ready = true;
+        }
+
+        private void Update()
+        {
+            if (!_ready || !_respawnEachDay || _director == null)
+            {
+                return;
+            }
+            if (_director.Leg != _lastLeg)
+            {
+                _lastLeg = _director.Leg;
+                RepositionAll(); // 新しい日：全アイテムを撒き直して再表示（消費済みも復活）
+            }
+        }
+
+        private void ComputeAisleRange()
+        {
+            _zMin = float.MaxValue;
+            _zMax = float.MinValue;
+            for (int i = 0; i < _director.SeatCount; i++)
+            {
+                float z = _director.GetSeat(i).Position.z;
+                _zMin = Mathf.Min(_zMin, z);
+                _zMax = Mathf.Max(_zMax, z);
+            }
+            if (_zMin > _zMax)
+            {
+                _zMin = -2f;
+                _zMax = 2f;
+            }
+        }
+
+        private void BuildPool(Pool pool)
+        {
+            if (pool == null || pool.prefab == null || pool.count <= 0)
+            {
+                if (pool != null && pool.prefab == null)
+                {
+                    Debug.LogWarning($"ItemSpawner: '{pool.label}' の prefab が未設定のためスキップします。");
+                }
+                return;
+            }
+
+            for (int i = 0; i < pool.count; i++)
+            {
+                var root = new GameObject($"{pool.label}_{i}");
+                root.transform.SetParent(transform, false);
+
+                GameObject model = Instantiate(pool.prefab, root.transform);
+                model.transform.localPosition = Vector3.zero;
+                model.transform.localRotation = Quaternion.Euler(pool.modelEuler);
+                ItemBeacon.EnsureUrpMaterials(model); // 真っピンク（マテリアル欠損）を防ぐ
+                NormalizeModel(root.transform, model, pool.targetSize);
+
+                var col = root.AddComponent<SphereCollider>();
+                col.isTrigger = true;
+                col.radius = 0.34f;
+
+                if (pool.kind == ItemKind.Coffee)
+                {
+                    root.AddComponent<CoffeeCupItem>();
+                }
+                else
+                {
+                    root.AddComponent<GlassesItem>();
+                }
+
+                root.SetActive(false);
+                _all.Add(root);
+            }
+        }
+
+        /// <summary>モデルの最大寸法を targetSize へ正規化し、中心を root 原点へ合わせる（浮遊配置用）。</summary>
+        private static void NormalizeModel(Transform root, GameObject model, float targetSize)
+        {
+            Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                return;
+            }
+
+            Bounds b = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+            {
+                b.Encapsulate(renderers[i].bounds);
+            }
+            float maxDim = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+            if (maxDim > 1e-4f)
+            {
+                model.transform.localScale *= targetSize / maxDim;
+            }
+
+            // 正規化後に中心を測り直し、root 原点に一致させる
+            renderers = model.GetComponentsInChildren<Renderer>();
+            Bounds b2 = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+            {
+                b2.Encapsulate(renderers[i].bounds);
+            }
+            model.transform.position -= b2.center - root.position;
+        }
+
+        private void RepositionAll()
+        {
+            var placed = new List<Vector3>();
+            foreach (GameObject item in _all)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+                Vector3 pos = PickReachableSpot(placed);
+                placed.Add(pos);
+                item.transform.localPosition = pos;
+                item.SetActive(true); // OnEnable で消費フラグ・基準位置がリセットされる
+            }
+        }
+
+        /// <summary>通路上・高さ固定で、既存アイテムと近すぎない一点を選ぶ（数回の棄却サンプリング）。</summary>
+        private Vector3 PickReachableSpot(List<Vector3> placed)
+        {
+            float zLo = _zMin + _endMargin;
+            float zHi = _zMax - _endMargin;
+            if (zLo > zHi)
+            {
+                float mid = (_zMin + _zMax) * 0.5f;
+                zLo = zHi = mid;
+            }
+
+            Vector3 best = new Vector3(Random.Range(_aisleX.x, _aisleX.y), _floatHeight, Random.Range(zLo, zHi));
+            for (int attempt = 0; attempt < 20; attempt++)
+            {
+                var candidate = new Vector3(Random.Range(_aisleX.x, _aisleX.y), _floatHeight, Random.Range(zLo, zHi));
+                bool ok = true;
+                foreach (Vector3 p in placed)
+                {
+                    if (Vector3.Distance(candidate, p) < _minSpacing)
+                    {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok)
+                {
+                    return candidate;
+                }
+                best = candidate;
+            }
+            return best;
+        }
+    }
+}

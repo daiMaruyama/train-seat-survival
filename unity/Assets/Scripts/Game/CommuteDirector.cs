@@ -58,7 +58,8 @@ namespace TrainSurvival.Game
         [SerializeField] private GameAudio.CueTuning _hornCue = new GameAudio.CueTuning { volumeScale = 1f, fadeOutSeconds = 0.04f };
         [SerializeField] private float _trainStopToArriveDelay = 0.25f;
         [SerializeField] private float _arriveToDoorOpenDelay = 0f;
-        [SerializeField] private float _bellToDoorCloseDelay = 0.7f;
+        [SerializeField] private float _bellToDoorCloseDelay = 0.7f; // ベル長が取れない場合の予備値
+        [SerializeField] private float _doorClosePshooTail = 0.45f;  // ベルクリップ末尾プシューの長さ。ドアはこの分だけ手前で閉じ始める
         [SerializeField] private float _bellToDepartureDelay = 0.9f;
 
         [Header("乗客チューニング（次の乗降・座り直しから反映）")]
@@ -207,8 +208,11 @@ namespace TrainSurvival.Game
             yield return new WaitForSeconds(_stationDwell);
 
             ApplyAudioTuning();
-            GameAudio.Instance.Play(GameAudio.Sfx.Bell); // 発車ベル＋ドア
-            yield return WaitTunable(() => _bellToDoorCloseDelay);
+            GameAudio.Instance.Play(GameAudio.Sfx.Bell); // 発車ベル（クリップ末尾にドア閉のプシュー）
+            // クリップ末尾のプシューが鳴る瞬間に合わせてドアを閉じる（長さから自動算出。取れなければ予備値）
+            float bellLen = GameAudio.Instance.GetClipLength(GameAudio.Sfx.Bell);
+            float doorDelay = bellLen > 0.01f ? Mathf.Max(0f, bellLen - _doorClosePshooTail) : _bellToDoorCloseDelay;
+            yield return WaitTunable(() => doorDelay);
             _car.SetDoorsOpen(false);
             yield return WaitTunable(() => _bellToDepartureDelay);
             ApplyAudioTuning();
@@ -350,6 +354,12 @@ namespace TrainSurvival.Game
         {
             _leg++;
             ClearCar();
+
+            // データメガネの効果は翌日へ持ち越さない
+            if (DataVisionView.Instance != null)
+            {
+                DataVisionView.Instance.Deactivate();
+            }
 
             _playerSeat = -1;
             if (_player != null)
@@ -703,6 +713,36 @@ namespace TrainSurvival.Game
         }
 
         public SeatAnchor GetSeat(int index) => _car.Seats[index];
+
+        /// <summary>座席総数（データメガネが全席を走査する用）。</summary>
+        public int SeatCount => _car != null ? _car.Seats.Count : 0;
+
+        /// <summary>
+        /// データメガネ用：その席の着席客が「あと何駅で降りるか」（＝降りそう度、小さいほど早く空く）と、
+        /// 頭上に情報を出すためのワールド座標を返す。空席・プレイヤー席のときは false。
+        /// これが <see cref="Core.Passenger.DestinationStation"/> という隠し情報を覗く唯一の窓口。
+        /// </summary>
+        public bool TryReadSeatIntel(int seat, out Vector3 headPosition, out int stationsUntilVacated)
+        {
+            headPosition = default;
+            stationsUntilVacated = int.MaxValue;
+            if (_seatOccupant == null || seat < 0 || seat >= _seatOccupant.Length)
+            {
+                return false;
+            }
+
+            Passenger p = _seatOccupant[seat];
+            if (p == null || seat == _playerSeat)
+            {
+                return false;
+            }
+
+            Vector3 seatPos = SeatViewPosition(seat);
+            // 座り姿勢の頭上あたり＋通路側へ少し寄せて、番号が背もたれに埋もれないようにする
+            headPosition = seatPos + Vector3.up * 1.24f + new Vector3(-Mathf.Sign(seatPos.x) * 0.12f, 0f, 0f);
+            stationsUntilVacated = Mathf.Max(0, p.DestinationStation - CurrentStation);
+            return true;
+        }
 
         /// <summary>プレイヤーが空席に座ろうとした。先に座れたら true（向かっていた立ち客は諦めて陣取り直す）。</summary>
         public bool TryPlayerSit(int seat)
