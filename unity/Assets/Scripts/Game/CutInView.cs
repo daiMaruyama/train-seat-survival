@@ -42,7 +42,19 @@ namespace TrainSurvival.Game
         private Text _subLine, _vDays, _vStations, _vBase, _vAllow, _vDeduct, _vTotal;
         private Text _rankBig, _rankLabel, _comment;
         private Image _stampCircle;
+        private RectTransform _signStrip;
+        private InputField _signField;
+        private Transform _signSeal;
+        private Image _signPanel;
+        private Text _rankingEntryText;
+        private Text _rankingGuideText;
+        private GameObject _actionsRoot;
+        private bool _awaitingSignature;
+        private bool _signatureDone;
         private Action _onRestart;
+
+        /// <summary>署名待ちか（サインするまでリトライ等の入力をブロックする）。</summary>
+        public bool IsAwaitingSignature => _awaitingSignature && !_signatureDone;
         private CanvasGroup _sceneFade;
         private bool _sceneTransitioning;
         [SerializeField] private string _titleSceneName = "Title";
@@ -63,9 +75,9 @@ namespace TrainSurvival.Game
         private void Update()
         {
             // リザルト表示中のキーショートカット（R=リトライは RunController 側が担当）
-            if (_resultGroup == null || !_resultGroup.interactable)
+            if (_resultGroup == null || !_resultGroup.interactable || RankingView.IsOpen || IsAwaitingSignature)
             {
-                return;
+                return; // ランキング表示中／署名タイプ中は T/L を拾わない
             }
             Keyboard kb = Keyboard.current;
             if (kb == null)
@@ -78,7 +90,7 @@ namespace TrainSurvival.Game
             }
             else if (kb.lKey.wasPressedThisFrame)
             {
-                ShowRankingPlaceholder();
+                ShowRanking();
             }
         }
 
@@ -197,6 +209,18 @@ namespace TrainSurvival.Game
             _resultGroup.alpha = 0f;
             _resultGroup.interactable = false;
             _resultGroup.blocksRaycasts = false;
+
+            // ランキング入りしていたら署名欄を出し、サインが済むまでボタンを隠す
+            _awaitingSignature = RankingStore.LastRecordRank >= 0 && _signField != null;
+            _signatureDone = false;
+            if (_signStrip != null)
+            {
+                _signStrip.gameObject.SetActive(_awaitingSignature);
+            }
+            if (_actionsRoot != null)
+            {
+                _actionsRoot.SetActive(!_awaitingSignature);
+            }
             if (_stampCircle != null)
             {
                 _stampCircle.transform.parent.localScale = Vector3.one; // 判子は後で押す
@@ -233,7 +257,100 @@ namespace TrainSurvival.Game
 
             // 判子がドンと押される
             yield return StampPunch();
+
+            // ランキング入りなら明細の署名欄が開き、サインするまで退勤（ボタン）できない
+            if (_awaitingSignature && _signField != null)
+            {
+                yield return WaitUnscaled(0.3f);
+                FocusSignature();
+            }
             // IsBusy は立てたまま（リスタートでシーンごと破棄される）
+        }
+
+        // ---- 署名（明細の紙の上でサイン→認印→退勤解禁） --------------------
+
+        private void FocusSignature()
+        {
+            // onEndEdit は EventSystem の選択処理中に呼ばれるため、その場で SetSelectedGameObject すると
+            // 「Attempting to select while already selecting」になる。必ず1フレーム遅らせる。
+            if (isActiveAndEnabled)
+            {
+                StartCoroutine(FocusSignatureDeferred());
+            }
+        }
+
+        private IEnumerator FocusSignatureDeferred()
+        {
+            yield return null;
+            if (_signField == null || !_awaitingSignature || _signatureDone || EventSystem.current == null)
+            {
+                yield break;
+            }
+            EventSystem.current.SetSelectedGameObject(_signField.gameObject);
+            _signField.ActivateInputField();
+        }
+
+        private void OnSignedPayslip(string value)
+        {
+            // シーン破棄時に InputField.OnDisable 経由でも呼ばれるため、死んだ状態では何もしない
+            if (this == null || !isActiveAndEnabled || _signatureDone || !_awaitingSignature)
+            {
+                return;
+            }
+
+            string name = (value ?? "").Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                FocusSignature(); // 空サインは受理しない
+                return;
+            }
+
+            _signatureDone = true;
+            PlayerProfile.Name = name;
+            RankingStore.Rename(RankingStore.LastRecordedTicks, name);
+            _signField.interactable = false; // 署名済みの書類は書き換えられない
+            StartCoroutine(SignatureAccepted());
+        }
+
+        private IEnumerator SignatureAccepted()
+        {
+            if (_rankingEntryText != null)
+            {
+                _rankingEntryText.text = $"第 {RankingStore.LastRecordRank + 1:00} 位　登録完了";
+                _rankingEntryText.color = new Color(0.08f, 0.42f, 0.32f);
+            }
+            if (_rankingGuideText != null)
+            {
+                _rankingGuideText.text = "ランキングを更新しました。順位表を表示します…";
+                _rankingGuideText.color = new Color(0.08f, 0.42f, 0.32f);
+            }
+            if (_signPanel != null)
+            {
+                _signPanel.color = new Color(0.20f, 0.66f, 0.49f, 0.15f);
+            }
+
+            // 認印がドンと押される
+            if (_signSeal != null)
+            {
+                _signSeal.gameObject.SetActive(true);
+                GameAudio.Instance.Play(GameAudio.Sfx.Ding, 0.95f);
+                float t = 0f;
+                while (t < 1f)
+                {
+                    t = Mathf.Min(1f, t + Time.unscaledDeltaTime / 0.16f);
+                    _signSeal.localScale = Vector3.one * Mathf.Lerp(2.2f, 1f, EaseOutCubic(t));
+                    yield return null;
+                }
+                _signSeal.localScale = Vector3.one;
+            }
+
+            // 更新完了を読める時間を置いてから発車標へ。閉じた後は退勤操作を解禁する
+            yield return WaitUnscaled(1.05f);
+            if (_actionsRoot != null)
+            {
+                _actionsRoot.SetActive(true);
+            }
+            RankingView.Show(RankingStore.LastRecordedTicks);
         }
 
         private IEnumerator SceneFadeOutRoutine(Action onCovered)
@@ -357,12 +474,13 @@ namespace TrainSurvival.Game
             _overDark = CreateImage("Dark", _overRoot, new Color(0.02f, 0.02f, 0.04f, 0f));
             Stretch(_overDark.rectTransform);
 
-            const float W = 1040f, H = 760f;
+            // リザルト中は明細が主役。画面端に余白だけ残す大判サイズにする
+            const float W = 1360f, H = 880f;
             var resultGo = new GameObject("Result", typeof(RectTransform), typeof(CanvasGroup));
             var resultRect = resultGo.GetComponent<RectTransform>();
             resultRect.SetParent(_overRoot, false);
-            resultRect.anchoredPosition = new Vector2(0f, 40f);
-            resultRect.sizeDelta = new Vector2(1120f, 1010f);
+            resultRect.anchoredPosition = new Vector2(0f, 34f);
+            resultRect.sizeDelta = new Vector2(1500f, 1080f);
             _resultGroup = resultGo.GetComponent<CanvasGroup>();
 
             // 給与明細の紙（角丸＋落ち影）
@@ -374,48 +492,57 @@ namespace TrainSurvival.Game
 
             // ヘッダ帯（紺）：給与明細書 ＋ 会社名
             Image header = CreateImage("Header", pr, TrainBody);
-            EdgeTop(header.rectTransform, 8f, 100f, sidePad: 8f);
+            EdgeTop(header.rectTransform, 8f, 112f, sidePad: 8f);
             UiKit.Panelize(header, 10);
-            Text title = FullText("Title", header.rectTransform, 44, TextAnchor.MiddleLeft, new Color(0.96f, 0.94f, 0.89f), 38f);
+            Text title = FullText("Title", header.rectTransform, 50, TextAnchor.MiddleLeft, new Color(0.96f, 0.94f, 0.89f), 46f);
             title.text = "給 与 明 細 書";
             title.fontStyle = FontStyle.Bold;
-            Text company = FullText("Company", header.rectTransform, 24, TextAnchor.MiddleRight, new Color(0.96f, 0.94f, 0.89f, 0.72f), 38f);
+            Text company = FullText("Company", header.rectTransform, 26, TextAnchor.MiddleRight, new Color(0.96f, 0.94f, 0.89f, 0.78f), 46f);
             company.text = "株式会社 ホワイト・ハッピー";
 
             // 日付サブライン
-            _subLine = SimpleLine(pr, 116f, 30, TextAnchor.MiddleLeft, new Color(SignInk.r, SignInk.g, SignInk.b, 0.72f));
+            _subLine = SimpleLine(pr, 130f, 30, TextAnchor.MiddleLeft, new Color(SignInk.r, SignInk.g, SignInk.b, 0.76f));
 
-            Rule(pr, 162f, 3f, new Color(0.13f, 0.14f, 0.17f, 0.5f));
+            Rule(pr, 178f, 3f, new Color(0.13f, 0.14f, 0.17f, 0.5f));
 
-            SectionLabel(pr, 176f, "勤務実績");
-            _vDays = PayRow(pr, 212f, "出勤日数", 28, 32, false, SignInk);
-            _vStations = PayRow(pr, 258f, "通過駅数", 28, 32, false, SignInk);
+            SectionLabel(pr, 192f, "勤務実績");
+            _vDays = PayRow(pr, 230f, "出勤日数", 30, 36, false, SignInk);
+            _vStations = PayRow(pr, 282f, "通過駅数", 30, 36, false, SignInk);
 
-            Rule(pr, 312f, 2f, new Color(0.13f, 0.14f, 0.17f, 0.22f));
-            SectionLabel(pr, 326f, "支給");
-            _vBase = PayRow(pr, 362f, "基本給", 28, 32, false, SignInk);
-            _vAllow = PayRow(pr, 408f, "精勤手当", 28, 32, false, SignInk);
-            _vDeduct = PayRow(pr, 454f, "過労控除", 28, 32, false, new Color(0.82f, 0.16f, 0.12f));
+            Rule(pr, 340f, 2f, new Color(0.13f, 0.14f, 0.17f, 0.22f));
+            SectionLabel(pr, 356f, "支給");
+            _vBase = PayRow(pr, 395f, "基本給", 30, 36, false, SignInk);
+            _vAllow = PayRow(pr, 448f, "精勤手当", 30, 36, false, SignInk);
+            _vDeduct = PayRow(pr, 501f, "過労控除", 30, 36, false, new Color(0.82f, 0.16f, 0.12f));
 
-            Rule(pr, 508f, 3f, new Color(0.13f, 0.14f, 0.17f, 0.5f));
-            _vTotal = PayRow(pr, 520f, "差引支給額", 38, 46, true, new Color(0.82f, 0.16f, 0.12f));
+            Rule(pr, 560f, 3f, new Color(0.13f, 0.14f, 0.17f, 0.5f));
+            _vTotal = PayRow(pr, 574f, "差引支給額", 42, 52, true, SignInk); // 赤は控除だけ＝読みやすく
 
-            Rule(pr, 596f, 3f, AccentOrange);
-            BuildCommentBox(pr, 612f, H);
+            Rule(pr, 654f, 3f, AccentOrange);
+            BuildCommentBox(pr, 670f, 80f);
+            BuildSignatureStrip(pr, 762f);
             BuildStamp(pr);
 
-            // 3ボタンとも同じ見た目・同じ大きさ（ホバーでオレンジ反転）
-            float by = -(H * 0.5f + 62f);
-            var btnSize = new Vector2(320f, 90f);
-            UiKit.MakeButton(resultRect, new Vector2(-336f, by), btnSize, "もう一度出勤する", 26, () => _onRestart?.Invoke());
-            UiKit.MakeButton(resultRect, new Vector2(0f, by), btnSize, "タイトルへ", 26, ReturnToTitle);
-            UiKit.MakeButton(resultRect, new Vector2(336f, by), btnSize, "ランキング", 26, ShowRankingPlaceholder);
+            // 3ボタン＋キーヒントは1コンテナに（署名が済むまで隠せるように）
+            var actionsGo = new GameObject("Actions", typeof(RectTransform));
+            RectTransform actions = actionsGo.GetComponent<RectTransform>();
+            actions.SetParent(resultRect, false);
+            Stretch(actions);
+            _actionsRoot = actionsGo;
 
-            Text hint = CreateText("Hint", resultRect, 22, TextAnchor.MiddleCenter);
+            float by = -(H * 0.5f + 58f);
+            var btnSize = new Vector2(360f, 92f);
+            UiKit.MakeButton(actions, new Vector2(-380f, by), btnSize, "もう一度出勤する", 27, () => _onRestart?.Invoke());
+            UiKit.MakeButton(actions, new Vector2(0f, by), btnSize, "タイトルへ", 26, ReturnToTitle);
+            UiKit.MakeButton(actions, new Vector2(380f, by), btnSize, "ランキング", 27, ShowRanking);
+
+            Text hint = CreateText("Hint", actions, 22, TextAnchor.MiddleCenter);
             hint.text = "［R］リトライ　　［T］タイトル　　［L］ランキング";
             hint.color = new Color(1f, 1f, 1f, 0.55f);
             hint.fontStyle = FontStyle.Bold;
-            hint.rectTransform.anchoredPosition = new Vector2(0f, by - 72f);
+            hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            hint.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            hint.rectTransform.anchoredPosition = new Vector2(0f, by - 64f);
             hint.rectTransform.sizeDelta = new Vector2(900f, 30f);
 
             _overRoot.gameObject.SetActive(false);
@@ -425,23 +552,32 @@ namespace TrainSurvival.Game
 
         private void FillAssessment(int days, int stations)
         {
-            int basePay = Mathf.Max(0, days) * 8000;
-            int allowance = Mathf.Max(0, stations) * 300;
-            int deduction = 12000; // 社会保険＋過労
-            int total = Mathf.Max(0, basePay + allowance - deduction);
+            // 計算式は Payroll に一元化（ランキングの「推定年収」と同じ式）
+            int basePay = Mathf.Max(0, days) * Payroll.BasePerDay;
+            int allowance = Mathf.Max(0, stations) * Payroll.PerStation;
+            int total = Payroll.Total(days, stations);
+            long annual = Payroll.Annual(days, stations);
 
-            _subLine.text = $"第 {days} 期通勤　／　本日、過労にて力尽く";
+            _subLine.text = $"第 {days} 期通勤　／　本日、過労にて力尽く　／　推定年収 ¥ {annual:#,0}";
             _vDays.text = $"{days} 日";
             _vStations.text = $"{stations} 駅";
             _vBase.text = $"¥ {basePay:#,0}";
             _vAllow.text = $"¥ {allowance:#,0}";
-            _vDeduct.text = $"- ¥ {deduction:#,0}";
+            _vDeduct.text = $"- ¥ {Payroll.Deduction:#,0}";
             _vTotal.text = $"¥ {total:#,0}";
 
             (string rank, string rankJa, string comment) = Assess(days);
             _rankBig.text = rank;
             _rankLabel.text = rankJa;
             _comment.text = comment;
+            if (_rankingEntryText != null && RankingStore.LastRecordRank >= 0)
+            {
+                _rankingEntryText.text = $"第 {RankingStore.LastRecordRank + 1:00} 位　登録待ち";
+            }
+            if (_rankingGuideText != null)
+            {
+                _rankingGuideText.text = "名前を署名するとランキング登録が確定します";
+            }
         }
 
         /// <summary>日数で決まる評定（ランク／肩書き／上から目線の一言）。</summary>
@@ -456,23 +592,126 @@ namespace TrainSurvival.Game
 
         // ---- 明細の小道具（すべて紙の上端からの yTop で配置＝崩れない） ----
 
-        private void BuildCommentBox(RectTransform paper, float yTop, float paperH)
+        private void BuildCommentBox(RectTransform paper, float yTop, float boxH)
         {
-            float boxH = paperH - yTop - 26f;
             Image bg = CreateImage("CommentBox", paper, new Color(SignInk.r, SignInk.g, SignInk.b, 0.06f));
             EdgeTop(bg.rectTransform, yTop, boxH, sidePad: Pad);
             UiKit.Panelize(bg, 8);
 
-            Text head = FullText("Head", bg.rectTransform, 22, TextAnchor.UpperLeft, AccentOrange, 22f);
-            head.text = "人事査定";
+            Text head = FullText("Head", bg.rectTransform, 20, TextAnchor.MiddleLeft, AccentOrange, 22f);
+            head.text = "人事査定：";
             head.fontStyle = FontStyle.Bold;
-            head.rectTransform.offsetMin = new Vector2(22f, 8f);
-            head.rectTransform.offsetMax = new Vector2(-22f, -10f);
+            head.rectTransform.anchorMin = new Vector2(0f, 0f);
+            head.rectTransform.anchorMax = new Vector2(0.15f, 1f);
 
-            _comment = FullText("Comment", bg.rectTransform, 30, TextAnchor.UpperLeft, SignInk, 22f);
-            _comment.horizontalOverflow = HorizontalWrapMode.Wrap;
-            _comment.rectTransform.offsetMin = new Vector2(24f, 14f);
-            _comment.rectTransform.offsetMax = new Vector2(-24f, -46f);
+            _comment = FullText("Comment", bg.rectTransform, 26, TextAnchor.MiddleLeft, SignInk, 0f);
+            _comment.rectTransform.anchorMin = new Vector2(0.15f, 0f);
+            _comment.rectTransform.anchorMax = new Vector2(1f, 1f);
+            _comment.rectTransform.offsetMax = new Vector2(-16f, 0f);
+        }
+
+        /// <summary>
+        /// 明細の末尾のランキング登録票。入賞順位と「署名で登録確定」を大きく見せる。
+        /// 署名後は同じ場所を登録完了表示へ変え、ランキングが更新されたことを伝える。
+        /// </summary>
+        private void BuildSignatureStrip(RectTransform paper, float yTop)
+        {
+            var stripGo = new GameObject("Signature", typeof(RectTransform), typeof(Image));
+            _signStrip = stripGo.GetComponent<RectTransform>();
+            _signStrip.SetParent(paper, false);
+            EdgeTop(_signStrip, yTop, 104f, sidePad: Pad);
+            _signPanel = stripGo.GetComponent<Image>();
+            _signPanel.color = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.11f);
+            UiKit.Panelize(_signPanel, 10);
+            var panelOutline = stripGo.AddComponent<Outline>();
+            panelOutline.effectColor = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.62f);
+            panelOutline.effectDistance = new Vector2(2f, -2f);
+
+            Text tag = FullText("Tag", _signStrip, 15, TextAnchor.MiddleLeft, AccentOrange, 22f);
+            tag.text = "RANKING ENTRY";
+            tag.fontStyle = FontStyle.Bold;
+            tag.rectTransform.anchorMin = new Vector2(0f, 0.60f);
+            tag.rectTransform.anchorMax = new Vector2(0.31f, 1f);
+
+            _rankingEntryText = FullText("RankStatus", _signStrip, 30, TextAnchor.MiddleLeft, SignInk, 22f);
+            _rankingEntryText.text = "ランキング登録待ち";
+            _rankingEntryText.fontStyle = FontStyle.Bold;
+            _rankingEntryText.rectTransform.anchorMin = new Vector2(0f, 0f);
+            _rankingEntryText.rectTransform.anchorMax = new Vector2(0.31f, 0.68f);
+
+            _rankingGuideText = FullText("Guide", _signStrip, 21, TextAnchor.MiddleLeft, SignInk, 0f);
+            _rankingGuideText.text = "名前を署名するとランキング登録が確定します";
+            _rankingGuideText.fontStyle = FontStyle.Bold;
+            _rankingGuideText.rectTransform.anchorMin = new Vector2(0.33f, 0.55f);
+            _rankingGuideText.rectTransform.anchorMax = new Vector2(0.96f, 1f);
+
+            // 白い記入枠を大きく取り、最下段でも入力場所を見失わないようにする
+            var fieldGo = new GameObject("SignField", typeof(RectTransform), typeof(Image), typeof(InputField));
+            fieldGo.transform.SetParent(_signStrip, false);
+            RectTransform fieldRect = fieldGo.GetComponent<RectTransform>();
+            fieldRect.anchorMin = new Vector2(0.33f, 0.08f);
+            fieldRect.anchorMax = new Vector2(0.76f, 0.54f);
+            fieldRect.offsetMin = new Vector2(0f, 0f);
+            fieldRect.offsetMax = new Vector2(-10f, 0f);
+            Image fieldBg = fieldGo.GetComponent<Image>();
+            fieldBg.color = new Color(1f, 0.99f, 0.96f, 0.96f);
+            UiKit.Panelize(fieldBg, 6);
+            var fieldOutline = fieldGo.AddComponent<Outline>();
+            fieldOutline.effectColor = new Color(SignInk.r, SignInk.g, SignInk.b, 0.32f);
+            fieldOutline.effectDistance = new Vector2(1.5f, -1.5f);
+
+            Text signText = CreateText("Text", fieldRect, 30, TextAnchor.MiddleLeft);
+            signText.color = SignInk;
+            signText.fontStyle = FontStyle.BoldAndItalic;
+            signText.supportRichText = false;
+            Stretch(signText.rectTransform);
+            signText.rectTransform.offsetMin = new Vector2(14f, 0f);
+            signText.rectTransform.offsetMax = new Vector2(-14f, 0f);
+
+            Text placeholder = CreateText("Placeholder", fieldRect, 21, TextAnchor.MiddleLeft);
+            placeholder.color = new Color(SignInk.r, SignInk.g, SignInk.b, 0.35f);
+            placeholder.fontStyle = FontStyle.Italic;
+            placeholder.text = "表示名を署名";
+            Stretch(placeholder.rectTransform);
+            placeholder.rectTransform.offsetMin = new Vector2(14f, 0f);
+            placeholder.rectTransform.offsetMax = new Vector2(-14f, 0f);
+
+            _signField = fieldGo.GetComponent<InputField>();
+            _signField.targetGraphic = fieldBg;
+            _signField.textComponent = signText;
+            _signField.placeholder = placeholder;
+            _signField.characterLimit = 10;
+            _signField.lineType = InputField.LineType.SingleLine; // Enter で署名
+            _signField.onEndEdit.AddListener(OnSignedPayslip);
+
+            Text enter = FullText("Enter", _signStrip, 20, TextAnchor.MiddleCenter, new Color(0.82f, 0.16f, 0.12f), 0f);
+            enter.text = "ENTER  登録確定";
+            enter.fontStyle = FontStyle.Bold;
+            enter.rectTransform.anchorMin = new Vector2(0.77f, 0.08f);
+            enter.rectTransform.anchorMax = new Vector2(0.96f, 0.54f);
+
+            // 認印（サイン受理でドンと出る）
+            var sealGo = new GameObject("Seal", typeof(RectTransform));
+            _signSeal = sealGo.transform;
+            RectTransform seal = sealGo.GetComponent<RectTransform>();
+            seal.SetParent(paper, false);
+            seal.anchorMin = seal.anchorMax = new Vector2(1f, 1f);
+            seal.pivot = new Vector2(0.5f, 0.5f);
+            seal.anchoredPosition = new Vector2(-92f, -(yTop + 51f));
+            seal.sizeDelta = new Vector2(72f, 72f);
+            seal.localRotation = Quaternion.Euler(0f, 0f, -9f);
+            Image ring = CreateImage("Ring", seal, new Color(0.82f, 0.16f, 0.12f, 0.12f));
+            Stretch(ring.rectTransform);
+            UiKit.Panelize(ring, 31);
+            var ringOutline = ring.gameObject.AddComponent<Outline>();
+            ringOutline.effectColor = new Color(0.82f, 0.16f, 0.12f, 0.85f);
+            ringOutline.effectDistance = new Vector2(2f, -2f);
+            Text sealText = FullText("Text", seal, 21, TextAnchor.MiddleCenter, new Color(0.82f, 0.16f, 0.12f, 0.9f), 0f);
+            sealText.text = "登録";
+            sealText.fontStyle = FontStyle.Bold;
+            sealGo.SetActive(false);
+
+            _signStrip.gameObject.SetActive(false); // ランキング入りしたときだけ出す
         }
 
         private void BuildStamp(RectTransform paper)
@@ -482,22 +721,22 @@ namespace TrainSurvival.Game
             r.SetParent(paper, false);
             r.anchorMin = r.anchorMax = new Vector2(1f, 1f);
             r.pivot = new Vector2(0.5f, 0.5f);
-            r.anchoredPosition = new Vector2(-180f, -232f);
-            r.sizeDelta = new Vector2(184f, 184f);
+            r.anchoredPosition = new Vector2(-220f, -272f);
+            r.sizeDelta = new Vector2(204f, 204f);
             r.localRotation = Quaternion.Euler(0f, 0f, -13f);
 
             _stampCircle = CreateImage("Ring", r, new Color(0.82f, 0.16f, 0.12f, 0.12f));
             Stretch(_stampCircle.rectTransform);
-            UiKit.Panelize(_stampCircle, 84); // 正方形＋半径84＝円
+            UiKit.Panelize(_stampCircle, 96); // 正方形＋半径96＝円
             var ring = _stampCircle.gameObject.AddComponent<Outline>();
             ring.effectColor = new Color(0.82f, 0.16f, 0.12f, 0.85f);
             ring.effectDistance = new Vector2(3.5f, -3.5f);
 
-            _rankBig = FullText("Rank", r, 82, TextAnchor.MiddleCenter, new Color(0.82f, 0.16f, 0.12f, 0.92f), 0f);
+            _rankBig = FullText("Rank", r, 90, TextAnchor.MiddleCenter, new Color(0.82f, 0.16f, 0.12f, 0.92f), 0f);
             _rankBig.fontStyle = FontStyle.Bold;
             _rankBig.rectTransform.offsetMin = new Vector2(0f, 16f);
 
-            _rankLabel = FullText("RankLabel", r, 17, TextAnchor.MiddleCenter, new Color(0.82f, 0.16f, 0.12f, 0.92f), 0f);
+            _rankLabel = FullText("RankLabel", r, 18, TextAnchor.MiddleCenter, new Color(0.82f, 0.16f, 0.12f, 0.92f), 0f);
             _rankLabel.fontStyle = FontStyle.Bold;
             _rankLabel.rectTransform.offsetMax = new Vector2(0f, -108f);
         }
@@ -576,9 +815,10 @@ namespace TrainSurvival.Game
             });
         }
 
-        private void ShowRankingPlaceholder()
+        private void ShowRanking()
         {
             GameAudio.Instance.Play(GameAudio.Sfx.Ding, 0.92f);
+            RankingView.Show(RankingStore.LastRecordedTicks); // 今回の記録を強調表示
         }
 
         // ---- 小道具 --------------------------------------------------------

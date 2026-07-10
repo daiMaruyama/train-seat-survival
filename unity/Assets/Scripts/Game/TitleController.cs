@@ -166,9 +166,10 @@ namespace TrainSurvival.Game
             StartCoroutine(LoadRoutine());
         }
 
-        private void ShowRankingPlaceholder()
+        private void ShowRanking()
         {
             GameAudio.Instance.Play(GameAudio.Sfx.Ding, 0.92f);
+            RankingView.Show();
         }
 
         private IEnumerator LoadRoutine()
@@ -574,7 +575,7 @@ namespace TrainSurvival.Game
             Button startBtn = UiKit.MakeButton(groupRect, new Vector2(-620f, -70f), btnSize, "出勤する", 30, StartGame);
             _startButton = startBtn.GetComponent<RectTransform>();
 
-            UiKit.MakeButton(groupRect, new Vector2(-620f, -176f), btnSize, "ランキング", 30, ShowRankingPlaceholder);
+            UiKit.MakeButton(groupRect, new Vector2(-620f, -176f), btnSize, "ランキング", 30, ShowRanking);
 
             Text hint = CreateText("Hint", groupRect, 22, TextAnchor.MiddleCenter);
             hint.text = "［ENTER / SPACE］で発車";

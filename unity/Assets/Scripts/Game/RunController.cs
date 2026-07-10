@@ -52,6 +52,11 @@ namespace TrainSurvival.Game
                 return;
             }
 
+            // ランキング表示中／明細への署名タイプ中は R を拾わない（サインの「r」で誤リトライしない）
+            if (RankingView.IsOpen || (_cutIn != null && _cutIn.IsAwaitingSignature))
+            {
+                return;
+            }
             if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             {
                 Restart();
@@ -69,6 +74,16 @@ namespace TrainSurvival.Game
 
             int days = _director != null ? _director.Leg + 1 : 1;
             int stations = _director != null ? _director.TotalStationsSurvived : 0;
+
+            // ランキングへ記録（ローカル保存。共有DBを繋いだらここから送信も行う）
+            RankingStore.Record(new RankingEntry
+            {
+                name = PlayerProfile.Name,
+                days = days,
+                stations = stations,
+                yen = Payroll.Annual(days, stations), // スコア＝推定年収
+                ticks = System.DateTime.Now.Ticks,
+            });
 
             // 視点操作を止めて「通勤中に倒れる」一人称演出へ
             var fpc = GetComponent<FirstPersonController>();
