@@ -93,10 +93,9 @@ namespace TrainSurvival.Game
 
             GameAudio.Instance.Play(GameAudio.Sfx.Arrive, 0.98f);
             GameAudio.Instance.PlayBgm(_bgmClip); // タイトルBGMをループ再生
-            StartCoroutine(EntranceRoutine());
+            StartCoroutine(TitleRevealRoutine());
             StartCoroutine(AmbientHornRoutine());
             StartCoroutine(PrewarmPassengersRoutine());
-            StartCoroutine(FadeInRoutine());
         }
 
         private void Update()
@@ -197,31 +196,48 @@ namespace TrainSurvival.Game
 
         private IEnumerator PrewarmPassengersRoutine()
         {
-            // UIと背景をまず1フレーム表示してから、ゲーム用の乗客素材を先読みする。
+            // タイトル入場中の引っかかりを避け、操作可能になった直後に裏で先読みする。
+            yield return null;
+            while (!_entranceReady)
+            {
+                yield return null;
+            }
             yield return null;
             PassengerPool.Prewarm();
             _passengersPrewarmed = true;
         }
 
+        private IEnumerator TitleRevealRoutine()
+        {
+            PrepareEntrance();
+            StartCoroutine(FadeInRoutine());
+            // 黒が大半晴れてからUIを動かし、入場アニメーションを見せる。
+            yield return new WaitForSecondsRealtime(0.12f);
+            yield return EntranceRoutine();
+        }
+
         private IEnumerator FadeInRoutine()
         {
-            yield return null; // タイトルの3D背景とUIが揃ってから復帰する
-            yield return Animate(0.45f, t => _fade.alpha = 1f - EaseOutCubic(t));
+            yield return Animate(0.28f, t => _fade.alpha = 1f - EaseOutCubic(t));
             _fade.alpha = 0f;
             _fade.blocksRaycasts = false;
         }
 
         // ---- 入場演出：タイトルが決まり、マーカーが走る -------------------
 
-        private IEnumerator EntranceRoutine()
+        private void PrepareEntrance()
         {
+            _entranceReady = false;
             _titleGroup.alpha = 0f;
             _startGroup.alpha = 0f;
             if (_highlight != null)
             {
                 _highlight.sizeDelta = new Vector2(0f, _highlight.sizeDelta.y);
             }
+        }
 
+        private IEnumerator EntranceRoutine()
+        {
             // 操作UIも並行して出し、背景だけが先行して見える時間を作らない。
             StartCoroutine(Animate(0.48f, p => _startGroup.alpha = EaseOutCubic(p)));
 
@@ -231,6 +247,8 @@ namespace TrainSurvival.Game
                 _titleGroup.alpha = p;
                 _titleGroupRect.anchoredPosition = new Vector2(Mathf.Lerp(-48f, 0f, EaseOutCubic(p)), _titleGroupRect.anchoredPosition.y);
             });
+            _startGroup.alpha = 1f;
+            _entranceReady = true;
 
             // 蛍光マーカーが横に一度だけ走る
             if (_highlight != null)
@@ -238,8 +256,6 @@ namespace TrainSurvival.Game
                 yield return Animate(0.25f, p =>
                     _highlight.sizeDelta = new Vector2(_highlightWidth * EaseOutCubic(p), _highlight.sizeDelta.y));
             }
-            _startGroup.alpha = 1f;
-            _entranceReady = true;
         }
 
         private IEnumerator AmbientHornRoutine()

@@ -26,13 +26,18 @@ namespace TrainSurvival.Game.PlayModeTests
             GameObject titlePassenger = GameObject.Find("TitleSalaryman");
             Assert.IsNotNull(titlePassenger);
             AssertOptimizedRenderer(titlePassenger.GetComponentInChildren<SkinnedMeshRenderer>(), "TitleSalaryman");
-            yield return new WaitForSecondsRealtime(0.75f);
             CanvasGroup initialFade = GameObject.Find("Fade")?.GetComponent<CanvasGroup>();
             CanvasGroup titleGroup = GameObject.Find("TitleBlock")?.GetComponent<CanvasGroup>();
             CanvasGroup startGroup = GameObject.Find("StartBlock")?.GetComponent<CanvasGroup>();
             Assert.IsNotNull(initialFade);
             Assert.IsNotNull(titleGroup);
             Assert.IsNotNull(startGroup);
+            yield return new WaitForSecondsRealtime(0.22f);
+            Assert.Less(initialFade.alpha, 0.25f,
+                "タイトル入場アニメーションを黒フェードが覆っています。");
+            Assert.That(titleGroup.alpha, Is.InRange(0.05f, 0.95f),
+                "黒が晴れた後にタイトル入場アニメーションが見えていません。");
+            yield return new WaitForSecondsRealtime(0.53f);
             Assert.Less(initialFade.alpha, 0.05f, "初回タイトルの暗転復帰が完了していません。");
             Assert.Greater(titleGroup.alpha, 0.95f, "初回タイトル文字が表示完了していません。");
             Assert.Greater(startGroup.alpha, 0.95f, "初回スタートUIが表示完了していません。");
