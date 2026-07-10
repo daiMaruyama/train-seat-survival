@@ -52,12 +52,22 @@ namespace TrainSurvival.Game
         private Action _onArrive;
         private bool _moving;
 
+        private sealed class OptimizedVisual
+        {
+            public Mesh Mesh;
+            public Material[] Materials;
+        }
+
+        private static readonly Dictionary<string, OptimizedVisual> OptimizedVisuals
+            = new Dictionary<string, OptimizedVisual>();
+
         /// <summary>体を組み立てる（プール生成時に1回だけ）。プレハブが無ければカプセルで代用。</summary>
         public void BuildBody(GameObject visualPrefab)
         {
             if (visualPrefab != null)
             {
                 GameObject go = Instantiate(visualPrefab, transform);
+                ApplyOptimizedVisual(go, visualPrefab.name);
                 go.name = "Visual";
                 _visual = go.transform;
                 _scale = BaseScale;
@@ -323,6 +333,33 @@ namespace TrainSurvival.Game
         private bool CanUseAnimator()
         {
             return _animator != null && _animator.gameObject.activeInHierarchy;
+        }
+
+        private static void ApplyOptimizedVisual(GameObject visual, string variantName)
+        {
+            if (!OptimizedVisuals.TryGetValue(variantName, out OptimizedVisual optimized))
+            {
+                Mesh mesh = Resources.Load<Mesh>($"PassengerOptimized/{variantName}_Mesh");
+                Material material = Resources.Load<Material>($"PassengerOptimized/{variantName}_Material");
+                optimized = new OptimizedVisual
+                {
+                    Mesh = mesh,
+                    Materials = material != null ? new[] { material } : null,
+                };
+                OptimizedVisuals.Add(variantName, optimized);
+            }
+
+            if (optimized.Mesh == null || optimized.Materials == null)
+            {
+                return;
+            }
+
+            SkinnedMeshRenderer renderer = visual.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMesh = optimized.Mesh;
+                renderer.sharedMaterials = optimized.Materials;
+            }
         }
     }
 }
