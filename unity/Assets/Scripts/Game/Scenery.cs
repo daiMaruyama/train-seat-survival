@@ -20,7 +20,7 @@ namespace TrainSurvival.Game
         [SerializeField] private float _loopLength = 90f; // ループ区間の長さ
         [SerializeField] private float _nearDistance = 8f;  // 窓からの距離（近景）
         [SerializeField] private float _farDistance = 22f;  // 窓からの距離（遠景）
-        [SerializeField] private int _buildingsPerLayer = 10; // 片側・1層あたりのビル数
+        [SerializeField] private int _buildingsPerLayer = 6; // 片側・1層あたりのビル数
 
         // 車内（明るい暖色グレー）と被らない、彩度のある街色パレット
         private static readonly Color[] BuildingColors =
