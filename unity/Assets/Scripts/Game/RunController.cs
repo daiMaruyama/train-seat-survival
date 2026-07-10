@@ -33,6 +33,12 @@ namespace TrainSurvival.Game
             Time.timeScale = 1f; // 前のランで止めた時間を戻す
             _director = FindFirstObjectByType<CommuteDirector>();
             _cutIn = FindFirstObjectByType<CutInView>();
+
+            // 危険度に連動する視界演出（心音とセット）。シーンに無ければここで立てる
+            if (FindFirstObjectByType<DangerVisionFx>() == null)
+            {
+                new GameObject("DangerVisionFx").AddComponent<DangerVisionFx>();
+            }
         }
 
         private void Update()

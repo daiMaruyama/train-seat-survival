@@ -56,6 +56,9 @@ namespace TrainSurvival.Game
             GameAudio.Instance.SetHeartbeat(HeartbeatIntensity());
         }
 
+        /// <summary>危険度(0..1)。心音と視界演出（DangerVisionFx）が同じ値で連動する。</summary>
+        public float Danger01 => IsPaused ? 0f : HeartbeatIntensity();
+
         private float HeartbeatIntensity()
         {
             if (_current <= 0f)
