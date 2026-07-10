@@ -72,6 +72,12 @@ namespace TrainSurvival.Game
                 _visual = go.transform;
                 _scale = BaseScale;
                 _visual.localScale = Vector3.one * _scale;
+                // 乗客はリアルタイム影を落とさない（全乗客分の影用スキニング＋影描画をまとめて削減。
+                // 受影はそのまま残るので車内の陰影は保たれ、見た目への影響は小さい）
+                foreach (Renderer r in go.GetComponentsInChildren<Renderer>())
+                {
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                }
                 _animator = go.GetComponent<Animator>();
                 if (_animator != null)
                 {
@@ -335,19 +341,25 @@ namespace TrainSurvival.Game
             return _animator != null && _animator.gameObject.activeInHierarchy;
         }
 
-        private static void ApplyOptimizedVisual(GameObject visual, string variantName)
+        public static void PrewarmOptimizedVisuals(IReadOnlyList<GameObject> variants)
         {
-            if (!OptimizedVisuals.TryGetValue(variantName, out OptimizedVisual optimized))
+            if (variants == null)
             {
-                Mesh mesh = Resources.Load<Mesh>($"PassengerOptimized/{variantName}_Mesh");
-                Material material = Resources.Load<Material>($"PassengerOptimized/{variantName}_Material");
-                optimized = new OptimizedVisual
-                {
-                    Mesh = mesh,
-                    Materials = material != null ? new[] { material } : null,
-                };
-                OptimizedVisuals.Add(variantName, optimized);
+                return;
             }
+            for (int i = 0; i < variants.Count; i++)
+            {
+                GameObject variant = variants[i];
+                if (variant != null)
+                {
+                    LoadOptimizedVisual(variant.name);
+                }
+            }
+        }
+
+        public static void ApplyOptimizedVisual(GameObject visual, string variantName)
+        {
+            OptimizedVisual optimized = LoadOptimizedVisual(variantName);
 
             if (optimized.Mesh == null || optimized.Materials == null)
             {
@@ -360,6 +372,24 @@ namespace TrainSurvival.Game
                 renderer.sharedMesh = optimized.Mesh;
                 renderer.sharedMaterials = optimized.Materials;
             }
+        }
+
+        private static OptimizedVisual LoadOptimizedVisual(string variantName)
+        {
+            if (OptimizedVisuals.TryGetValue(variantName, out OptimizedVisual optimized))
+            {
+                return optimized;
+            }
+
+            Mesh mesh = Resources.Load<Mesh>($"PassengerOptimized/{variantName}_Mesh");
+            Material material = Resources.Load<Material>($"PassengerOptimized/{variantName}_Material");
+            optimized = new OptimizedVisual
+            {
+                Mesh = mesh,
+                Materials = material != null ? new[] { material } : null,
+            };
+            OptimizedVisuals.Add(variantName, optimized);
+            return optimized;
         }
     }
 }

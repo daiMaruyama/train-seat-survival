@@ -43,10 +43,13 @@ namespace TrainSurvival.Game
         private Text _rankBig, _rankLabel, _comment;
         private Image _stampCircle;
         private Action _onRestart;
+        private CanvasGroup _sceneFade;
+        private bool _sceneTransitioning;
         [SerializeField] private string _titleSceneName = "Title";
 
         /// <summary>演出再生中か（多重再生ガード）。</summary>
         public bool IsBusy { get; private set; }
+        public bool IsSceneTransitioning => _sceneTransitioning;
 
         private void Awake()
         {
@@ -71,7 +74,7 @@ namespace TrainSurvival.Game
             }
             if (kb.tKey.wasPressedThisFrame)
             {
-                LoadTitle();
+                ReturnToTitle();
             }
             else if (kb.lKey.wasPressedThisFrame)
             {
@@ -112,6 +115,17 @@ namespace TrainSurvival.Game
             _onRestart = onRestart;
             FillAssessment(days, stations);
             StartCoroutine(GameOverRoutine(onCovered));
+        }
+
+        /// <summary>リザルトから別シーンへ移る直前に、最前面を黒で覆う。</summary>
+        public void PlaySceneFadeOut(Action onCovered)
+        {
+            if (_sceneTransitioning)
+            {
+                return;
+            }
+            _sceneTransitioning = true;
+            StartCoroutine(SceneFadeOutRoutine(onCovered));
         }
 
         // ---- 日替わり：電車の通過 ------------------------------------------
@@ -222,6 +236,19 @@ namespace TrainSurvival.Game
             // IsBusy は立てたまま（リスタートでシーンごと破棄される）
         }
 
+        private IEnumerator SceneFadeOutRoutine(Action onCovered)
+        {
+            if (_resultGroup != null)
+            {
+                _resultGroup.interactable = false;
+                _resultGroup.blocksRaycasts = false;
+            }
+            _sceneFade.blocksRaycasts = true;
+            yield return Animate(0.4f, t => _sceneFade.alpha = EaseInCubic(t));
+            _sceneFade.alpha = 1f;
+            onCovered?.Invoke();
+        }
+
         private IEnumerator StampPunch()
         {
             if (_stampCircle == null)
@@ -253,6 +280,17 @@ namespace TrainSurvival.Game
 
             BuildDay(root);
             BuildGameOver(root);
+            BuildSceneFade(root);
+        }
+
+        private void BuildSceneFade(RectTransform root)
+        {
+            Image fade = CreateImage("SceneFade", root, Color.black);
+            fade.raycastTarget = true;
+            Stretch(fade.rectTransform);
+            _sceneFade = fade.gameObject.AddComponent<CanvasGroup>();
+            _sceneFade.alpha = 0f;
+            _sceneFade.blocksRaycasts = false;
         }
 
         private void BuildDay(RectTransform root)
@@ -370,7 +408,7 @@ namespace TrainSurvival.Game
             float by = -(H * 0.5f + 62f);
             var btnSize = new Vector2(320f, 90f);
             UiKit.MakeButton(resultRect, new Vector2(-336f, by), btnSize, "もう一度出勤する", 26, () => _onRestart?.Invoke());
-            UiKit.MakeButton(resultRect, new Vector2(0f, by), btnSize, "タイトルへ", 26, LoadTitle);
+            UiKit.MakeButton(resultRect, new Vector2(0f, by), btnSize, "タイトルへ", 26, ReturnToTitle);
             UiKit.MakeButton(resultRect, new Vector2(336f, by), btnSize, "ランキング", 26, ShowRankingPlaceholder);
 
             Text hint = CreateText("Hint", resultRect, 22, TextAnchor.MiddleCenter);
@@ -528,10 +566,14 @@ namespace TrainSurvival.Game
             return t;
         }
 
-        private void LoadTitle()
+        public void ReturnToTitle()
         {
-            Time.timeScale = 1f;
-            SceneManager.LoadScene(_titleSceneName);
+            PlaySceneFadeOut(() =>
+            {
+                Time.timeScale = 1f;
+                RunStartContext.RequestTitleFadeInTransition();
+                SceneManager.LoadSceneAsync(_titleSceneName);
+            });
         }
 
         private void ShowRankingPlaceholder()

@@ -9,6 +9,7 @@ namespace TrainSurvival.Game
     public static class RunStartContext
     {
         private static bool _openingDayTransition;
+        private static bool _titleFadeInTransition;
 
         /// <summary>開幕の日替わり演出を要求する（タイトルからゲーム開始時に呼ぶ）。</summary>
         public static void RequestOpeningDayTransition() => _openingDayTransition = true;
@@ -21,6 +22,17 @@ namespace TrainSurvival.Game
         {
             bool requested = _openingDayTransition;
             _openingDayTransition = false;
+            return requested;
+        }
+
+        /// <summary>リザルトからタイトルへ戻った直後のフェードインを要求する。</summary>
+        public static void RequestTitleFadeInTransition() => _titleFadeInTransition = true;
+
+        /// <summary>タイトル側がフェードイン要求を1回だけ消費する。</summary>
+        public static bool ConsumeTitleFadeInTransition()
+        {
+            bool requested = _titleFadeInTransition;
+            _titleFadeInTransition = false;
             return requested;
         }
     }

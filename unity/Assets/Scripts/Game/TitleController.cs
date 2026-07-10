@@ -68,6 +68,8 @@ namespace TrainSurvival.Game
 
         private Vector3 _cameraBasePosition;
         private bool _loading;
+        private bool _passengersPrewarmed;
+        public bool EnteredWithFade { get; private set; }
 
         private void Start()
         {
@@ -76,14 +78,26 @@ namespace TrainSurvival.Game
             Cursor.visible = true;
 
             RegisterAudioClips();
+            BuildUi();
+            bool fadeInFromResult = RunStartContext.ConsumeTitleFadeInTransition();
+            EnteredWithFade = fadeInFromResult;
+            if (fadeInFromResult && _fade != null)
+            {
+                _fade.alpha = 1f;
+                _fade.blocksRaycasts = true;
+            }
             BuildWorld();
             ConfigureCamera();
-            BuildUi();
 
             GameAudio.Instance.Play(GameAudio.Sfx.Arrive, 0.98f);
             GameAudio.Instance.PlayBgm(_bgmClip); // タイトルBGMをループ再生
             StartCoroutine(EntranceRoutine());
             StartCoroutine(AmbientHornRoutine());
+            StartCoroutine(PrewarmPassengersRoutine());
+            if (fadeInFromResult)
+            {
+                StartCoroutine(FadeInRoutine());
+            }
         }
 
         private void Update()
@@ -171,9 +185,31 @@ namespace TrainSurvival.Game
                     yield return null;
                 }
             }
+            if (!_passengersPrewarmed)
+            {
+                PassengerPool.Prewarm();
+                _passengersPrewarmed = true;
+                yield return null;
+            }
             GameAudio.Instance.StopBgm(); // タイトルBGMをゲームへ持ち込まない
             RunStartContext.RequestOpeningDayTransition(); // InGame 開幕の日替わり演出を焚く
-            SceneManager.LoadScene(_gameSceneName);
+            yield return SceneManager.LoadSceneAsync(_gameSceneName);
+        }
+
+        private IEnumerator PrewarmPassengersRoutine()
+        {
+            // UIと背景をまず1フレーム表示してから、ゲーム用の乗客素材を先読みする。
+            yield return null;
+            PassengerPool.Prewarm();
+            _passengersPrewarmed = true;
+        }
+
+        private IEnumerator FadeInRoutine()
+        {
+            yield return null; // タイトルの3D背景とUIが揃ってから復帰する
+            yield return Animate(0.45f, t => _fade.alpha = 1f - EaseOutCubic(t));
+            _fade.alpha = 0f;
+            _fade.blocksRaycasts = false;
         }
 
         // ---- 入場演出：タイトルが決まり、マーカーが走る -------------------
@@ -260,6 +296,7 @@ namespace TrainSurvival.Game
             }
 
             GameObject commuter = Instantiate(prefab);
+            PassengerActor.ApplyOptimizedVisual(commuter, prefab.name);
             commuter.name = "TitleSalaryman";
             commuter.transform.SetPositionAndRotation(basePos, baseRot);
             commuter.transform.localScale = Vector3.one * 0.72f;

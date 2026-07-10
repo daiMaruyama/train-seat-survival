@@ -20,6 +20,12 @@ namespace TrainSurvival.Game
         public PassengerPool(Transform parent)
         {
             _parent = parent;
+            Prewarm();
+        }
+
+        /// <summary>タイトル表示中に乗客プレハブと最適化メッシュを先読みする。</summary>
+        public static void Prewarm()
+        {
             if (_variants == null || _variants.Length == 0)
             {
                 _variants = Resources.LoadAll<GameObject>("Passengers");
@@ -28,6 +34,7 @@ namespace TrainSurvival.Game
                     Debug.LogWarning("[PassengerPool] Resources/Passengers にプレハブが無いためカプセルで代用");
                 }
             }
+            PassengerActor.PrewarmOptimizedVisuals(_variants);
         }
 
         public PassengerActor Get()

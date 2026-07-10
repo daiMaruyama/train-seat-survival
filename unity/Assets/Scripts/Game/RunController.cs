@@ -19,6 +19,7 @@ namespace TrainSurvival.Game
         private StaminaSystem _stamina;
         private CommuteDirector _director;
         private CutInView _cutIn;
+        private bool _restarting;
 
         public bool IsOver { get; private set; }
 
@@ -141,9 +142,28 @@ namespace TrainSurvival.Game
         /// <summary>やり直し（R キー／リトライボタン共通）。</summary>
         public void Restart()
         {
+            if (_restarting)
+            {
+                return;
+            }
+            _restarting = true;
+
+            if (_cutIn != null)
+            {
+                _cutIn.PlaySceneFadeOut(LoadRestartScene);
+            }
+            else
+            {
+                LoadRestartScene();
+            }
+        }
+
+        private void LoadRestartScene()
+        {
             Time.timeScale = 1f;
+            RunStartContext.RequestOpeningDayTransition();
             Scene scene = SceneManager.GetActiveScene();
-            SceneManager.LoadScene(scene.buildIndex);
+            SceneManager.LoadSceneAsync(scene.buildIndex);
         }
     }
 }

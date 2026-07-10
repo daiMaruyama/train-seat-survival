@@ -48,7 +48,7 @@ namespace TrainSurvival.Game
         private float _punch;      // カードの弾み残り(1→0)
         private bool _initialized;
 
-        private void Start()
+        private void Awake()
         {
             _stamina = FindFirstObjectByType<StaminaSystem>();
             _director = FindFirstObjectByType<CommuteDirector>();
