@@ -72,7 +72,7 @@ namespace TrainSurvival.Game
         /// </summary>
         public static void EnsureUrpMaterials(GameObject target)
         {
-            Shader lit = Shader.Find("Universal Render Pipeline/Lit");
+            Shader lit = RuntimeMaterials.LitShader;
             if (lit == null)
             {
                 return;
@@ -94,7 +94,11 @@ namespace TrainSurvival.Game
                     float metallic = source.HasProperty("_Metallic") ? source.GetFloat("_Metallic") : 0f;
                     float smoothness = source.HasProperty("_Glossiness") ? source.GetFloat("_Glossiness") : 0.35f;
 
-                    var upgraded = new Material(lit) { name = $"{source.name}_URP" };
+                    // エミッション対応テンプレを複製（後段の ApplyEmission がキーワードを立てても
+                    // ビルドにそのバリアントが入っているようにする）
+                    Material upgraded = RuntimeMaterials.LitEmissive();
+                    upgraded.name = $"{source.name}_URP";
+                    upgraded.SetColor("_EmissionColor", Color.black); // 既定は光らせない
                     if (texture != null && upgraded.HasProperty("_BaseMap"))
                     {
                         upgraded.SetTexture("_BaseMap", texture);
@@ -131,7 +135,8 @@ namespace TrainSurvival.Game
         /// <summary>Unlit＋加算ブレンドのマテリアル（シーンの明るさに埋もれず、周囲も照らさない）。</summary>
         public static Material AdditiveUnlit(Color color, Texture2D texture)
         {
-            var m = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            // テンプレート複製（ビルドに加算バリアントを確実に含めるため Shader.Find では組まない）
+            var m = RuntimeMaterials.UnlitAdditive();
             m.SetFloat("_Surface", 1f);
             m.SetOverrideTag("RenderType", "Transparent");
             m.SetFloat("_SrcBlend", (float)BlendMode.One);

@@ -42,6 +42,9 @@ namespace TrainSurvival.Game
         private readonly List<Vector3> _doors = new List<Vector3>();
         private readonly List<SeatMarker> _markers = new List<SeatMarker>();
         private readonly List<Renderer> _doorRenderers = new List<Renderer>();
+        // 車内プリミティブはパレット色ごとに1枚のURPマテリアルを共有する。
+        // CreatePrimitive の既定マテリアルはURP Playerで非対応になり得るため使用しない。
+        private readonly Dictionary<Color32, Material> _opaqueMaterials = new Dictionary<Color32, Material>();
         private static bool? _nextSpawnCoffeeOverride;
 
         /// <summary>車内の全座席（組み立て順）。Awake 後に有効。</summary>
@@ -219,7 +222,7 @@ namespace TrainSurvival.Game
         {
             if (_glassMaterial == null)
             {
-                var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                var m = RuntimeMaterials.Glass(); // テンプレ複製（ビルドへ透明バリアントを確実に含める）
                 m.SetFloat("_Surface", 1f); // Transparent
                 m.SetOverrideTag("RenderType", "Transparent");
                 m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
@@ -263,7 +266,7 @@ namespace TrainSurvival.Game
             if (_strapRingMesh == null)
             {
                 _strapRingMesh = BuildTorusMesh(0.0275f, 0.010f, 20, 10); // 外径≒従来の円盤(0.075)と同じ
-                _strapRingMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                _strapRingMaterial = RuntimeMaterials.Lit();
                 _strapRingMaterial.color = StrapColor;
                 if (_strapRingMaterial.HasProperty("_BaseColor"))
                 {
@@ -435,50 +438,8 @@ namespace TrainSurvival.Game
 
         private static void UpgradeCoffeeMaterials(GameObject go)
         {
-            Shader lit = Shader.Find("Universal Render Pipeline/Lit");
-            if (lit == null)
-            {
-                return;
-            }
-
-            foreach (Renderer renderer in go.GetComponentsInChildren<Renderer>())
-            {
-                Material[] materials = renderer.materials;
-                for (int i = 0; i < materials.Length; i++)
-                {
-                    Material source = materials[i];
-                    if (source == null || source.shader == lit)
-                    {
-                        continue;
-                    }
-
-                    Texture texture = source.HasProperty("_MainTex") ? source.GetTexture("_MainTex") : source.mainTexture;
-                    Color color = source.HasProperty("_Color") ? source.color : Color.white;
-                    float metallic = source.HasProperty("_Metallic") ? source.GetFloat("_Metallic") : 0f;
-                    float smoothness = source.HasProperty("_Glossiness") ? source.GetFloat("_Glossiness") : 0.35f;
-
-                    var upgraded = new Material(lit);
-                    upgraded.name = $"{source.name}_URP";
-                    if (texture != null && upgraded.HasProperty("_BaseMap"))
-                    {
-                        upgraded.SetTexture("_BaseMap", texture);
-                    }
-                    if (upgraded.HasProperty("_BaseColor"))
-                    {
-                        upgraded.SetColor("_BaseColor", color);
-                    }
-                    if (upgraded.HasProperty("_Metallic"))
-                    {
-                        upgraded.SetFloat("_Metallic", metallic);
-                    }
-                    if (upgraded.HasProperty("_Smoothness"))
-                    {
-                        upgraded.SetFloat("_Smoothness", smoothness);
-                    }
-                    materials[i] = upgraded;
-                }
-                renderer.materials = materials;
-            }
+            // URP変換は共通実装へ（テンプレ .mat 経由＝ビルドでもピンクにならない）
+            ItemBeacon.EnsureUrpMaterials(go);
         }
 
         /// <summary>座席を視線で狙うための見えないトリガー（isTrigger なので歩行は邪魔しない）。</summary>
@@ -538,11 +499,48 @@ namespace TrainSurvival.Game
 
             var renderer = go.GetComponent<Renderer>();
             renderer.shadowCastingMode = ShadowCastingMode.Off; // 明るいフラットな絵にする
-            Material material = renderer.material;
+            renderer.sharedMaterial = OpaqueMaterial(color);
+        }
+
+        private Material OpaqueMaterial(Color color)
+        {
+            Color32 key = color;
+            if (_opaqueMaterials.TryGetValue(key, out Material material))
+            {
+                return material;
+            }
+
+            material = RuntimeMaterials.Lit();
+            material.name = $"CarLit_{key.r:X2}{key.g:X2}{key.b:X2}";
             material.color = color;
             if (material.HasProperty("_BaseColor"))
             {
                 material.SetColor("_BaseColor", color);
+            }
+            material.enableInstancing = true;
+            _opaqueMaterials.Add(key, material);
+            return material;
+        }
+
+        private void OnDestroy()
+        {
+            foreach (Material material in _opaqueMaterials.Values)
+            {
+                Destroy(material);
+            }
+            _opaqueMaterials.Clear();
+
+            if (_glassMaterial != null)
+            {
+                Destroy(_glassMaterial);
+            }
+            if (_strapRingMaterial != null)
+            {
+                Destroy(_strapRingMaterial);
+            }
+            if (_strapRingMesh != null)
+            {
+                Destroy(_strapRingMesh);
             }
         }
     }

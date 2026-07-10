@@ -43,7 +43,7 @@ namespace TrainSurvival.Game
         }
 
         private readonly List<Layer> _layers = new List<Layer>();
-        private readonly List<Material> _materials = new List<Material>();
+        private readonly Dictionary<Color32, Material> _opaqueMaterials = new Dictionary<Color32, Material>();
         private readonly List<Mesh> _meshes = new List<Mesh>();
         private Material _windowMaterial;
         private CommuteDirector _director;
@@ -124,13 +124,7 @@ namespace TrainSurvival.Game
                 renderer.receiveShadows = false;
                 Color c = BuildingColors[Random.Range(0, BuildingColors.Length)];
                 c = new Color(Mathf.Min(1f, c.r * tint.r), Mathf.Min(1f, c.g * tint.g), Mathf.Min(1f, c.b * tint.b));
-                Material m = renderer.material;
-                m.color = c;
-                if (m.HasProperty("_BaseColor"))
-                {
-                    m.SetColor("_BaseColor", c);
-                }
-                _materials.Add(m);
+                renderer.sharedMaterial = OpaqueMaterial(c);
                 AddWindows(go.transform, side, width, height, depth);
 
                 layer.Buildings.Add(go.transform);
@@ -206,7 +200,7 @@ namespace TrainSurvival.Game
         {
             if (_windowMaterial == null)
             {
-                _windowMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                _windowMaterial = RuntimeMaterials.LitEmissive(); // テンプレ複製（エミッションのバリアントをビルドへ）
                 _windowMaterial.color = WindowColor;
                 if (_windowMaterial.HasProperty("_BaseColor"))
                 {
@@ -248,21 +242,36 @@ namespace TrainSurvival.Game
             var renderer = ground.GetComponent<Renderer>();
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
-            Material m = renderer.material;
-            m.color = GroundColor;
-            if (m.HasProperty("_BaseColor"))
+            renderer.sharedMaterial = OpaqueMaterial(GroundColor);
+        }
+
+        private Material OpaqueMaterial(Color color)
+        {
+            Color32 key = color;
+            if (_opaqueMaterials.TryGetValue(key, out Material material))
             {
-                m.SetColor("_BaseColor", GroundColor);
+                return material;
             }
-            _materials.Add(m);
+
+            material = RuntimeMaterials.Lit();
+            material.name = $"SceneryLit_{key.r:X2}{key.g:X2}{key.b:X2}";
+            material.color = color;
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", color);
+            }
+            material.enableInstancing = true;
+            _opaqueMaterials.Add(key, material);
+            return material;
         }
 
         private void OnDestroy()
         {
-            foreach (Material m in _materials)
+            foreach (Material m in _opaqueMaterials.Values)
             {
                 Destroy(m);
             }
+            _opaqueMaterials.Clear();
             foreach (Mesh mesh in _meshes)
             {
                 Destroy(mesh);
