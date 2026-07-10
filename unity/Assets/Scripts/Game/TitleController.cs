@@ -88,8 +88,9 @@ namespace TrainSurvival.Game
                 _fade.alpha = 1f;
                 _fade.blocksRaycasts = true;
             }
-            BuildWorld();
             ConfigureCamera();
+            // 車内＋ビル群の建設は重いので初回フレーム描画の後ろへ回す（黒カバー＋UIを先に出し、
+            // シーン切替直後の「何も出ない待ち時間」を消す。建設のヒッチは黒の下に隠れる）
 
             GameAudio.Instance.Play(GameAudio.Sfx.Arrive, 0.98f);
             GameAudio.Instance.PlayBgm(_bgmClip); // タイトルBGMをループ再生
@@ -209,6 +210,10 @@ namespace TrainSurvival.Game
 
         private IEnumerator TitleRevealRoutine()
         {
+            // まず黒カバー＋UIだけの初回フレームを出してから、重い世界構築を黒の下で行う
+            yield return null;
+            BuildWorld();
+
             PrepareEntrance();
             StartCoroutine(FadeInRoutine());
             // 黒が大半晴れてからUIを動かし、入場アニメーションを見せる。
