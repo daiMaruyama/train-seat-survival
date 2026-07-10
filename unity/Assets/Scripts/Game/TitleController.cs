@@ -69,6 +69,7 @@ namespace TrainSurvival.Game
         private Vector3 _cameraBasePosition;
         private bool _loading;
         private bool _passengersPrewarmed;
+        private bool _entranceReady;
         public bool EnteredWithFade { get; private set; }
 
         private void Start()
@@ -81,7 +82,8 @@ namespace TrainSurvival.Game
             BuildUi();
             bool fadeInFromResult = RunStartContext.ConsumeTitleFadeInTransition();
             EnteredWithFade = fadeInFromResult;
-            if (fadeInFromResult && _fade != null)
+            // 初回も復帰時も、背景だけが先に見えないよう黒で覆ってからUIごと表示する。
+            if (_fade != null)
             {
                 _fade.alpha = 1f;
                 _fade.blocksRaycasts = true;
@@ -94,10 +96,7 @@ namespace TrainSurvival.Game
             StartCoroutine(EntranceRoutine());
             StartCoroutine(AmbientHornRoutine());
             StartCoroutine(PrewarmPassengersRoutine());
-            if (fadeInFromResult)
-            {
-                StartCoroutine(FadeInRoutine());
-            }
+            StartCoroutine(FadeInRoutine());
         }
 
         private void Update()
@@ -125,7 +124,7 @@ namespace TrainSurvival.Game
             }
 
             Keyboard kb = Keyboard.current;
-            if (!_loading && kb != null &&
+            if (!_loading && _entranceReady && kb != null &&
                 (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
             {
                 StartGame();
@@ -157,7 +156,7 @@ namespace TrainSurvival.Game
 
         public void StartGame()
         {
-            if (_loading)
+            if (_loading || !_entranceReady)
             {
                 return;
             }
@@ -223,8 +222,11 @@ namespace TrainSurvival.Game
                 _highlight.sizeDelta = new Vector2(0f, _highlight.sizeDelta.y);
             }
 
+            // 操作UIも並行して出し、背景だけが先行して見える時間を作らない。
+            StartCoroutine(Animate(0.48f, p => _startGroup.alpha = EaseOutCubic(p)));
+
             // タイトルがスッと決まる（左からわずかに寄って止まる）
-            yield return Animate(0.5f, p =>
+            yield return Animate(0.45f, p =>
             {
                 _titleGroup.alpha = p;
                 _titleGroupRect.anchoredPosition = new Vector2(Mathf.Lerp(-48f, 0f, EaseOutCubic(p)), _titleGroupRect.anchoredPosition.y);
@@ -233,12 +235,11 @@ namespace TrainSurvival.Game
             // 蛍光マーカーが横に一度だけ走る
             if (_highlight != null)
             {
-                yield return Animate(0.32f, p =>
+                yield return Animate(0.25f, p =>
                     _highlight.sizeDelta = new Vector2(_highlightWidth * EaseOutCubic(p), _highlight.sizeDelta.y));
             }
-
-            // スタート導線がふわっと出る
-            yield return Animate(0.4f, p => _startGroup.alpha = p);
+            _startGroup.alpha = 1f;
+            _entranceReady = true;
         }
 
         private IEnumerator AmbientHornRoutine()
