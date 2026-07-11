@@ -27,6 +27,9 @@ namespace TrainSurvival.Game
         /// <summary>難度用の消耗倍率。日が進むほど上がる（＝通勤が徐々にキツくなり、ランは必ず終わる）。</summary>
         public float DrainMultiplier { get; set; } = 1f;
 
+        /// <summary>その日限りの消耗倍率（モーレツ等のドーピング。乗り換えで1にリセット）。</summary>
+        public float TemporaryDrainScale { get; set; } = 1f;
+
         /// <summary>日替わりカットイン中など、ゲーム操作へ戻る前は消耗を止める。</summary>
         public bool IsPaused { get; set; }
 
@@ -51,7 +54,7 @@ namespace TrainSurvival.Game
             }
 
             // 座っても回復は微々たるもの。立ちの消耗が主で、ランは長くは続かない。
-            float perSecond = _sit != null && _sit.IsSeated ? _recoverPerSecond : -_drainPerSecond * DrainMultiplier;
+            float perSecond = _sit != null && _sit.IsSeated ? _recoverPerSecond : -_drainPerSecond * DrainMultiplier * TemporaryDrainScale;
             _current = Mathf.Clamp(_current + perSecond * Time.deltaTime, 0f, _max);
             GameAudio.Instance.SetHeartbeat(HeartbeatIntensity());
         }

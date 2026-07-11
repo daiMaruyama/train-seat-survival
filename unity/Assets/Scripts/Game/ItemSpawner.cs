@@ -13,7 +13,7 @@ namespace TrainSurvival.Game
     /// </summary>
     public sealed class ItemSpawner : MonoBehaviour
     {
-        public enum ItemKind { Coffee, Glasses }
+        public enum ItemKind { Coffee, Glasses, EnergyDrink, Moretsu }
 
         [System.Serializable]
         public sealed class Pool
@@ -26,9 +26,11 @@ namespace TrainSurvival.Game
             public ItemKind kind = ItemKind.Coffee;
         }
 
-        [Header("プール（prefab をアサインしてね）")]
+        [Header("プール（prefab をアサインしてね。エナドリ/モーレツは未設定ならプリミティブで代用）")]
         [SerializeField] private Pool _coffee = new() { label = "Coffee", count = 4, targetSize = 0.26f, kind = ItemKind.Coffee };
         [SerializeField] private Pool _glasses = new() { label = "Glasses", count = 1, targetSize = 0.34f, kind = ItemKind.Glasses };
+        [SerializeField] private Pool _energyDrink = new() { label = "EnergyDrink", count = 1, targetSize = 0.24f, kind = ItemKind.EnergyDrink };
+        [SerializeField] private Pool _moretsu = new() { label = "Moretsu", count = 1, targetSize = 0.20f, kind = ItemKind.Moretsu };
 
         [Header("配置（プレイヤーが取れる通路上・高さ固定）")]
         [SerializeField] private float _floatHeight = 1.05f;             // 浮遊高さ（胸元＝視界に入る）
@@ -62,6 +64,8 @@ namespace TrainSurvival.Game
             ComputeAisleRange();
             BuildPool(_coffee);
             BuildPool(_glasses);
+            BuildPool(_energyDrink);
+            BuildPool(_moretsu);
             RepositionAll();
             _lastLeg = _director.Leg;
             _ready = true;
@@ -99,12 +103,14 @@ namespace TrainSurvival.Game
 
         private void BuildPool(Pool pool)
         {
-            if (pool == null || pool.prefab == null || pool.count <= 0)
+            if (pool == null || pool.count <= 0)
             {
-                if (pool != null && pool.prefab == null)
-                {
-                    Debug.LogWarning($"ItemSpawner: '{pool.label}' の prefab が未設定のためスキップします。");
-                }
+                return;
+            }
+            bool canFallback = pool.kind == ItemKind.EnergyDrink || pool.kind == ItemKind.Moretsu;
+            if (pool.prefab == null && !canFallback)
+            {
+                Debug.LogWarning($"ItemSpawner: '{pool.label}' の prefab が未設定のためスキップします。");
                 return;
             }
 
@@ -113,28 +119,85 @@ namespace TrainSurvival.Game
                 var root = new GameObject($"{pool.label}_{i}");
                 root.transform.SetParent(transform, false);
 
-                GameObject model = Instantiate(pool.prefab, root.transform);
+                GameObject model;
+                if (pool.prefab != null)
+                {
+                    model = Instantiate(pool.prefab, root.transform);
+                    ItemBeacon.EnsureUrpMaterials(model); // 真っピンク（マテリアル欠損）を防ぐ
+                }
+                else
+                {
+                    // 美術が来るまでのプリミティブ代用（prefab を挿せばそちらが優先される）
+                    model = BuildFallbackModel(pool.kind, root.transform);
+                }
                 model.transform.localPosition = Vector3.zero;
                 model.transform.localRotation = Quaternion.Euler(pool.modelEuler);
-                ItemBeacon.EnsureUrpMaterials(model); // 真っピンク（マテリアル欠損）を防ぐ
                 NormalizeModel(root.transform, model, pool.targetSize);
 
                 var col = root.AddComponent<SphereCollider>();
                 col.isTrigger = true;
                 col.radius = 0.34f;
 
-                if (pool.kind == ItemKind.Coffee)
+                switch (pool.kind)
                 {
-                    root.AddComponent<CoffeeCupItem>();
-                }
-                else
-                {
-                    root.AddComponent<GlassesItem>();
+                    case ItemKind.Coffee: root.AddComponent<CoffeeCupItem>(); break;
+                    case ItemKind.EnergyDrink: root.AddComponent<EnergyDrinkItem>(); break;
+                    case ItemKind.Moretsu: root.AddComponent<MoretsuDrinkItem>(); break;
+                    default: root.AddComponent<GlassesItem>(); break;
                 }
 
                 root.SetActive(false);
                 _all.Add(root);
             }
+        }
+
+        /// <summary>prefab 未設定アイテムのプリミティブ見た目（缶／小瓶）。コライダーは付けない。</summary>
+        private static GameObject BuildFallbackModel(ItemKind kind, Transform parent)
+        {
+            var model = new GameObject("Visual");
+            model.transform.SetParent(parent, false);
+
+            if (kind == ItemKind.EnergyDrink)
+            {
+                // 金の缶（円柱）＋銀のプルタブ面
+                GameObject can = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                Object.Destroy(can.GetComponent<Collider>());
+                can.transform.SetParent(model.transform, false);
+                can.transform.localScale = new Vector3(0.5f, 0.62f, 0.5f);
+                var m = RuntimeMaterials.Lit();
+                m.color = new Color(0.95f, 0.78f, 0.22f);
+                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", new Color(0.95f, 0.78f, 0.22f));
+                if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0.75f);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.7f);
+                can.GetComponent<Renderer>().sharedMaterial = m;
+            }
+            else
+            {
+                // 茶褐色の小瓶（カプセル）＋金のキャップ
+                GameObject bottle = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                Object.Destroy(bottle.GetComponent<Collider>());
+                bottle.transform.SetParent(model.transform, false);
+                bottle.transform.localScale = new Vector3(0.45f, 0.5f, 0.45f);
+                var m = RuntimeMaterials.Lit();
+                var brown = new Color(0.42f, 0.2f, 0.1f);
+                m.color = brown;
+                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", brown);
+                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.65f);
+                bottle.GetComponent<Renderer>().sharedMaterial = m;
+
+                GameObject cap = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                Object.Destroy(cap.GetComponent<Collider>());
+                cap.transform.SetParent(model.transform, false);
+                cap.transform.localPosition = new Vector3(0f, 0.52f, 0f);
+                cap.transform.localScale = new Vector3(0.22f, 0.1f, 0.22f);
+                var cm = RuntimeMaterials.Lit();
+                var gold = new Color(0.9f, 0.75f, 0.3f);
+                cm.color = gold;
+                if (cm.HasProperty("_BaseColor")) cm.SetColor("_BaseColor", gold);
+                if (cm.HasProperty("_Metallic")) cm.SetFloat("_Metallic", 0.7f);
+                cap.GetComponent<Renderer>().sharedMaterial = cm;
+            }
+            return model;
         }
 
         /// <summary>モデルの最大寸法を targetSize へ正規化し、中心を root 原点へ合わせる（浮遊配置用）。</summary>
