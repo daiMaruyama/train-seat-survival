@@ -97,10 +97,30 @@ namespace TrainSurvival.Game
             return sprite;
         }
 
-        /// <summary>既存の Image を角丸パネル化する（色は保持）。</summary>
-        public static Image Panelize(Image image, int radius)
+        private static Sprite _kenneyPanel;
+        private static bool _kenneyPanelLoaded;
+
+        /// <summary>Kenney のパネル下地（Resources/UiSprites。未導入なら null で従来描画に落ちる）。</summary>
+        private static Sprite KenneyPanel()
         {
-            image.sprite = RoundedRect(radius);
+            if (!_kenneyPanelLoaded)
+            {
+                _kenneyPanel = Resources.Load<Sprite>("UiSprites/button_square_flat");
+                _kenneyPanelLoaded = true;
+            }
+            return _kenneyPanel;
+        }
+
+        /// <summary>
+        /// 既存の Image を角丸パネル化する（色は保持）。中くらいの角丸（7〜20）は Kenney の
+        /// 9スライス下地を使い、細い帯（〜6）と円形（21〜）は従来の手続き生成を使う。
+        /// ゲージやスライダーの塗りなど高さの小さい矩形は forceProcedural=true で従来描画を強制
+        /// （9スライスの境界16pxが要素サイズを超えて崩れるため）。
+        /// </summary>
+        public static Image Panelize(Image image, int radius, bool forceProcedural = false)
+        {
+            Sprite kenney = forceProcedural || radius < 7 || radius > 20 ? null : KenneyPanel();
+            image.sprite = kenney != null ? kenney : RoundedRect(radius);
             image.type = Image.Type.Sliced;
             image.pixelsPerUnitMultiplier = 1f;
             return image;
@@ -278,6 +298,187 @@ namespace TrainSurvival.Game
             var entry = new EventTrigger.Entry { eventID = type };
             entry.callback.AddListener(_ => action());
             trigger.triggers.Add(entry);
+        }
+
+        private static Sprite _ledGrid;
+        private static Sprite _paperGrain;
+
+        /// <summary>LED盤のドット格子（4pxタイル）。文字の上に薄く重ねると電光掲示板のドット感が出る。</summary>
+        public static void AddLedGrid(RectTransform parent, float alpha = 0.30f)
+        {
+            if (_ledGrid == null)
+            {
+                var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false)
+                {
+                    wrapMode = TextureWrapMode.Repeat,
+                    filterMode = FilterMode.Point,
+                };
+                var px = new Color32[16];
+                for (int y = 0; y < 4; y++)
+                {
+                    for (int x = 0; x < 4; x++)
+                    {
+                        // 格子線（各タイルの左端・下端）だけ黒、残りは透明＝ドットの隙間
+                        bool line = x == 0 || y == 0;
+                        px[y * 4 + x] = line ? new Color32(0, 0, 0, 255) : new Color32(0, 0, 0, 0);
+                    }
+                }
+                tex.SetPixels32(px);
+                tex.Apply();
+                _ledGrid = Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 100f);
+            }
+
+            var go = new GameObject("LedGrid", typeof(Image));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.sprite = _ledGrid;
+            img.type = Image.Type.Tiled;
+            img.color = new Color(0f, 0f, 0f, alpha);
+            img.raycastTarget = false;
+            Fill(img.rectTransform);
+        }
+
+        /// <summary>紙の繊維グレイン（ノイズタイル）。クリーム紙に薄く重ねると「書類」の質感が出る。</summary>
+        public static void AddPaperGrain(RectTransform parent, float alpha = 0.045f)
+        {
+            if (_paperGrain == null)
+            {
+                const int size = 128;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+                {
+                    wrapMode = TextureWrapMode.Repeat,
+                    filterMode = FilterMode.Bilinear,
+                };
+                var px = new Color32[size * size];
+                var rng = new System.Random(1234); // 固定シード＝毎回同じ紙
+                for (int i = 0; i < px.Length; i++)
+                {
+                    // まばらな暗い斑点＋ごく薄い繊維ムラ
+                    double v = rng.NextDouble();
+                    byte a = v > 0.86 ? (byte)rng.Next(90, 180) : v > 0.55 ? (byte)rng.Next(15, 45) : (byte)0;
+                    px[i] = new Color32(40, 34, 26, a);
+                }
+                tex.SetPixels32(px);
+                tex.Apply();
+                _paperGrain = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            }
+
+            var go = new GameObject("PaperGrain", typeof(Image));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.sprite = _paperGrain;
+            img.type = Image.Type.Tiled;
+            img.color = new Color(1f, 1f, 1f, Mathf.Clamp01(alpha * 20f)); // 斑点自体が薄いので倍率で調整
+            img.raycastTarget = false;
+            Fill(img.rectTransform);
+        }
+
+        /// <summary>
+        /// パネルに枠線（Kenney の border スプライト）を重ねて「駅サインの額縁」にする。
+        /// 平らな下地だけでは手続き生成と見分けが付かないため、構造のある縁で質感を出す。
+        /// </summary>
+        public static void AddFrame(Image panel, Color color, float inset = 0f)
+        {
+            var sprite = Resources.Load<Sprite>("UiSprites/button_rectangle_border");
+            if (sprite == null)
+            {
+                return; // 未導入なら何もしない
+            }
+            var go = new GameObject("Frame", typeof(Image));
+            go.transform.SetParent(panel.transform, false);
+            var img = go.GetComponent<Image>();
+            img.sprite = sprite;
+            img.type = Image.Type.Sliced;
+            img.color = color;
+            img.raycastTarget = false;
+            RectTransform rt = img.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(inset, inset);
+            rt.offsetMax = new Vector2(-inset, -inset);
+        }
+
+        /// <summary>
+        /// 共通スライダー（ラベル左＋トラック右・オレンジ塗り・丸ノブ）。タイトルの音量スライダーと
+        /// 同じ意匠を全画面の基準として使い回す。
+        /// </summary>
+        public static Slider MakeSlider(RectTransform parent, Vector2 anchoredPos, float width, string label, float value, float min, float max, UnityEngine.Events.UnityAction<float> onChanged)
+        {
+            var rowGo = new GameObject(label + "Slider", typeof(RectTransform));
+            var row = rowGo.GetComponent<RectTransform>();
+            row.SetParent(parent, false);
+            row.anchoredPosition = anchoredPos;
+            row.sizeDelta = new Vector2(width, 30f);
+
+            Text tag = ButtonLabel(row, label, 20, new Color(1f, 1f, 1f, 0.72f));
+            tag.alignment = TextAnchor.MiddleLeft;
+            tag.rectTransform.anchorMin = new Vector2(0f, 0f);
+            tag.rectTransform.anchorMax = new Vector2(0.34f, 1f);
+
+            var trackGo = new GameObject("Track", typeof(RectTransform), typeof(Image), typeof(Slider));
+            trackGo.transform.SetParent(row, false);
+            var track = trackGo.GetComponent<RectTransform>();
+            track.anchorMin = new Vector2(0.36f, 0.22f);
+            track.anchorMax = new Vector2(1f, 0.78f);
+            track.offsetMin = Vector2.zero;
+            track.offsetMax = Vector2.zero;
+            // トラックは柔らかい溝（Kenneyのslide素材は形が尖っていて世界観に合わなかったため不採用）
+            var bg = trackGo.GetComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0.38f);
+            Panelize(bg, 9, forceProcedural: true);
+
+            var fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
+            fillAreaGo.transform.SetParent(track, false);
+            var fillArea = fillAreaGo.GetComponent<RectTransform>();
+            fillArea.anchorMin = Vector2.zero;
+            fillArea.anchorMax = Vector2.one;
+            fillArea.offsetMin = Vector2.zero;
+            fillArea.offsetMax = Vector2.zero;
+
+            var fillGo = new GameObject("Fill", typeof(Image));
+            fillGo.transform.SetParent(fillArea, false);
+            var fill = fillGo.GetComponent<Image>();
+            fill.color = new Color(0.95f, 0.45f, 0.15f);
+            fill.raycastTarget = false;
+            Panelize(fill, 8, forceProcedural: true); // 高さの小さい塗りは9スライスが崩れる
+            var fillRect = fill.rectTransform;
+            fillRect.anchorMin = new Vector2(0f, 0f);
+            fillRect.anchorMax = new Vector2(0f, 1f);
+            fillRect.pivot = new Vector2(0f, 0.5f);
+            fillRect.sizeDelta = Vector2.zero;
+
+            var handleAreaGo = new GameObject("Handle Slide Area", typeof(RectTransform));
+            handleAreaGo.transform.SetParent(track, false);
+            var handleArea = handleAreaGo.GetComponent<RectTransform>();
+            handleArea.anchorMin = Vector2.zero;
+            handleArea.anchorMax = Vector2.one;
+            handleArea.offsetMin = new Vector2(10f, 0f);
+            handleArea.offsetMax = new Vector2(-10f, 0f);
+
+            // ノブは丸（クリーム色＋細いオレンジ縁）＝駅サインの意匠に寄せる
+            var handleGo = new GameObject("Handle", typeof(Image));
+            handleGo.transform.SetParent(handleArea, false);
+            var handle = handleGo.GetComponent<Image>();
+            handle.color = new Color(0.96f, 0.94f, 0.89f);
+            Panelize(handle, 11, forceProcedural: true); // 22px＋半径11＝正円
+            handle.rectTransform.sizeDelta = new Vector2(22f, 22f);
+            var handleEdge = handleGo.AddComponent<Outline>();
+            handleEdge.effectColor = new Color(0.95f, 0.45f, 0.15f, 0.9f);
+            handleEdge.effectDistance = new Vector2(1.5f, -1.5f);
+
+            var slider = trackGo.GetComponent<Slider>();
+            slider.transition = Selectable.Transition.None;
+            slider.fillRect = fillRect;
+            slider.handleRect = handle.rectTransform;
+            slider.targetGraphic = handle;
+            slider.minValue = min;
+            slider.maxValue = max;
+            slider.value = value;
+            if (onChanged != null)
+            {
+                slider.onValueChanged.AddListener(onChanged);
+            }
+            return slider;
         }
 
         /// <summary>中央ドット＋四方の短いティックで構成した最小限のクロスヘアを作る。</summary>

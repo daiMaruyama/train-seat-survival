@@ -189,12 +189,12 @@ namespace TrainSurvival.Game
             RectTransform back = backImage.rectTransform;
             Anchor(back, new Vector2(0f, 1f), new Vector2(22f, -54f), new Vector2(BarWidth, BarHeight));
             back.pivot = new Vector2(0f, 1f);
-            UiKit.Panelize(backImage, 14);
+            UiKit.Panelize(backImage, 14, forceProcedural: true); // 高さ30pxのバーは9スライスが崩れる
 
-            _trail = LeftFill(UiKit.Panelize(CreateImage("StaminaTrail", back, TrailColor), 13).rectTransform);
-            _fillImage = UiKit.Panelize(CreateImage("StaminaFill", back, BarHigh), 13);
+            _trail = LeftFill(UiKit.Panelize(CreateImage("StaminaTrail", back, TrailColor), 13, forceProcedural: true).rectTransform);
+            _fillImage = UiKit.Panelize(CreateImage("StaminaFill", back, BarHigh), 13, forceProcedural: true);
             _fill = LeftFill(_fillImage.rectTransform);
-            _flashImage = UiKit.Panelize(CreateImage("StaminaFlash", back, new Color(1f, 1f, 1f, 0f)), 13);
+            _flashImage = UiKit.Panelize(CreateImage("StaminaFlash", back, new Color(1f, 1f, 1f, 0f)), 13, forceProcedural: true);
             LeftFill(_flashImage.rectTransform);
 
             _staminaLabel = CreateText("StaminaValue", back, 20, TextAnchor.MiddleRight);

@@ -138,3 +138,9 @@ InitTestScene*.unity*
 /[Aa]ssets/Audio.meta
 /[Aa]ssets/Resources/Audio/
 /[Aa]ssets/Resources/Audio.meta
+
+# Kenney UI Pack（外部アセット。Resources/UiSprites へ必要分だけ複製して使う）
+/[Aa]ssets/kenney_ui-pack/
+/[Aa]ssets/kenney_ui-pack.meta
+/[Aa]ssets/Resources/UiSprites/
+/[Aa]ssets/Resources/UiSprites.meta

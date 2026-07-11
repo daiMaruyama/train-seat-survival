@@ -552,6 +552,7 @@ namespace TrainSurvival.Game
         private Text CreateTitleText(string name, RectTransform parent, Vector2 pos, Color color)
         {
             Text title = CreateText(name, parent, 118, TextAnchor.UpperLeft);
+            title.font = UiFont.LoadDisplay(); // タイトルロゴはポップ体（DisplayFont.ttf差し替えで比較可）
             title.text = "座れ！\nサラリーマン！";
             title.fontStyle = FontStyle.Bold;
             title.lineSpacing = 0.92f;
@@ -630,84 +631,142 @@ namespace TrainSurvival.Game
             }
         }
 
+        private static readonly Color PlateAmber = new Color(1f, 0.72f, 0.2f);
+        private static readonly Color PlateMetal = new Color(0.085f, 0.095f, 0.115f, 0.97f);
+
+        /// <summary>
+        /// 音量パネル＝「運転台の音量調整盤」。チャコールの金属板＋四隅のリベット＋ハードな落ち影、
+        /// カタカナのドット銘板（LEDフォント）、操作は機器のフェーダー（矩形キャップ＋目盛り）。
+        /// 駅サイン風の額縁＋タブは"ゲームに合わない"評だったため機器路線へ全面変更。
+        /// </summary>
         private void BuildVolumePanel(RectTransform root)
         {
             GameAudio audio = GameAudio.Instance;
 
-            Image panel = CreateImage("VolumePanel", root, CardBg);
+            // ハード影（ぼかさない＝ボタンと同じコミック調）
+            Image shadow = CreateImage("VolumeShadow", root, new Color(0f, 0f, 0f, 0.5f));
+            Anchor(shadow.rectTransform, new Vector2(1f, 1f), new Vector2(-29f, -43f), new Vector2(304f, 176f));
+            shadow.rectTransform.pivot = new Vector2(1f, 1f);
+
+            Image panel = CreateImage("VolumePanel", root, PlateMetal);
             RectTransform rect = panel.rectTransform;
-            Anchor(rect, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(320f, 132f));
+            Anchor(rect, new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(304f, 176f));
             rect.pivot = new Vector2(1f, 1f);
-            UiKit.Panelize(panel, 16);
-            UiKit.AddShadow(panel, 16, blur: 26, alpha: 0.42f, offset: new Vector2(0f, -8f));
+            UiKit.Panelize(panel, 4, forceProcedural: true); // 角は僅かに落とすだけ＝機器の板
+            var edge = panel.gameObject.AddComponent<Outline>();
+            edge.effectColor = new Color(1f, 1f, 1f, 0.10f);
+            edge.effectDistance = new Vector2(1.5f, -1.5f);
 
-            Text head = CreateText("Head", rect, 20, TextAnchor.MiddleLeft);
-            head.text = "音量";
-            head.color = new Color(1f, 1f, 1f, 0.7f);
-            head.fontStyle = FontStyle.Bold;
-            Anchor(head.rectTransform, new Vector2(0f, 1f), new Vector2(20f, -12f), new Vector2(120f, 26f));
-            UiKit.Outline(head, 1.1f, 0.35f);
+            // 四隅のリベット
+            foreach (Vector2 corner in new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f) })
+            {
+                Image rivet = CreateImage("Rivet", rect, new Color(0.55f, 0.58f, 0.62f, 0.85f));
+                RectTransform rr = rivet.rectTransform;
+                rr.anchorMin = rr.anchorMax = corner;
+                rr.pivot = new Vector2(0.5f, 0.5f);
+                rr.anchoredPosition = new Vector2(corner.x == 0f ? 11f : -11f, corner.y == 0f ? 11f : -11f);
+                rr.sizeDelta = new Vector2(7f, 7f);
+                UiKit.Panelize(rivet, 21, forceProcedural: true); // 円
+            }
 
-            BuildSlider(rect, "BGM", new Vector2(20f, -48f), audio.BgmVolume, v => audio.BgmVolume = v);
-            BuildSlider(rect, "SE", new Vector2(20f, -90f), audio.SeVolume, v => audio.SeVolume = v);
+            // 銘板（カタカナ×ドット文字＝機器ラベル）＋アンバーの下線
+            Text head = CreateText("Head", rect, 16, TextAnchor.MiddleLeft);
+            head.font = UiFont.LoadLed();
+            head.text = "オンリョウ チョウセイ";
+            head.color = PlateAmber;
+            Anchor(head.rectTransform, new Vector2(0f, 1f), new Vector2(18f, -13f), new Vector2(220f, 20f));
+            head.rectTransform.pivot = new Vector2(0f, 1f);
+            Image headLine = CreateImage("HeadLine", rect, new Color(PlateAmber.r, PlateAmber.g, PlateAmber.b, 0.55f));
+            Anchor(headLine.rectTransform, new Vector2(0f, 1f), new Vector2(18f, -37f), new Vector2(268f, 2f));
+            headLine.rectTransform.pivot = new Vector2(0f, 1f);
+
+            BuildFader(rect, "ゼンタイ", -56f, audio.MasterVolume, v => audio.MasterVolume = v);
+            BuildFader(rect, "BGM", -96f, audio.BgmVolume, v => audio.BgmVolume = v);
+            BuildFader(rect, "SE", -136f, audio.SeVolume, v => audio.SeVolume = v);
         }
 
-        /// <summary>ラベル付きの簡易スライダー（ハンドル無し・バーをドラッグで値変更）。</summary>
-        private void BuildSlider(RectTransform parent, string label, Vector2 pos, float value, UnityEngine.Events.UnityAction<float> onChanged)
+        /// <summary>機器盤のフェーダー1本（ドット文字ラベル＋溝＋目盛り＋矩形キャップ）。</summary>
+        private void BuildFader(RectTransform parent, string label, float yTop, float value, UnityEngine.Events.UnityAction<float> onChanged)
         {
-            Text tag = CreateText($"{label}Label", parent, 18, TextAnchor.MiddleLeft);
+            Text tag = CreateText(label + "Tag", parent, 16, TextAnchor.MiddleLeft);
+            tag.font = UiFont.LoadLed();
             tag.text = label;
-            tag.color = new Color(1f, 1f, 1f, 0.62f);
-            Anchor(tag.rectTransform, new Vector2(0f, 1f), new Vector2(20f, pos.y), new Vector2(52f, 28f));
+            tag.color = new Color(0.85f, 0.88f, 0.9f, 0.85f);
+            Anchor(tag.rectTransform, new Vector2(0f, 1f), new Vector2(18f, yTop), new Vector2(76f, 26f));
+            tag.rectTransform.pivot = new Vector2(0f, 1f);
 
-            var sliderGo = new GameObject($"{label}Slider", typeof(RectTransform), typeof(Image), typeof(Slider));
+            var sliderGo = new GameObject(label + "Fader", typeof(RectTransform), typeof(Image), typeof(Slider));
             sliderGo.transform.SetParent(parent, false);
             RectTransform sliderRect = sliderGo.GetComponent<RectTransform>();
-            Anchor(sliderRect, new Vector2(0f, 1f), new Vector2(76f, pos.y), new Vector2(212f, 20f));
-            sliderRect.pivot = new Vector2(0f, 0.5f);
-            Image bg = sliderGo.GetComponent<Image>();
-            bg.color = new Color(1f, 1f, 1f, 0.14f);
-            UiKit.Panelize(bg, 10);
+            Anchor(sliderRect, new Vector2(0f, 1f), new Vector2(100f, yTop), new Vector2(186f, 26f));
+            sliderRect.pivot = new Vector2(0f, 1f);
+            Image hit = sliderGo.GetComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f); // 透明の当たり判定
 
-            // 塗り（Fill Area > Fill）
+            // 溝（インセットの細いスリット）
+            Image groove = CreateImage("Groove", sliderRect, new Color(0f, 0f, 0f, 0.62f));
+            groove.rectTransform.anchorMin = new Vector2(0f, 0.5f);
+            groove.rectTransform.anchorMax = new Vector2(1f, 0.5f);
+            groove.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            groove.rectTransform.sizeDelta = new Vector2(0f, 6f);
+            groove.rectTransform.anchoredPosition = Vector2.zero;
+            var grooveEdge = groove.gameObject.AddComponent<Outline>();
+            grooveEdge.effectColor = new Color(1f, 1f, 1f, 0.08f);
+            grooveEdge.effectDistance = new Vector2(0f, -1f);
+
+            // 目盛り（下側に5本）
+            for (int i = 0; i <= 4; i++)
+            {
+                Image tick = CreateImage("Tick", sliderRect, new Color(1f, 1f, 1f, 0.22f));
+                RectTransform tr = tick.rectTransform;
+                tr.anchorMin = tr.anchorMax = new Vector2(i / 4f, 0f);
+                tr.pivot = new Vector2(0.5f, 0f);
+                tr.anchoredPosition = new Vector2(i == 0 ? 3f : i == 4 ? -3f : 0f, -1f);
+                tr.sizeDelta = new Vector2(2f, 5f);
+            }
+
+            // 塗り（アンバーの細いライン＝通電表示）
             var fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
             fillAreaGo.transform.SetParent(sliderRect, false);
             RectTransform fillArea = fillAreaGo.GetComponent<RectTransform>();
-            fillArea.anchorMin = new Vector2(0f, 0f);
-            fillArea.anchorMax = new Vector2(1f, 1f);
-            fillArea.offsetMin = Vector2.zero;
-            fillArea.offsetMax = Vector2.zero;
-
-            Image fillImage = CreateImage("Fill", fillArea, AccentOrange);
-            fillImage.raycastTarget = false;
-            UiKit.Panelize(fillImage, 9);
-            RectTransform fillRect = fillImage.rectTransform;
-            fillRect.anchorMin = new Vector2(0f, 0f);
-            fillRect.anchorMax = new Vector2(0f, 1f);
+            fillArea.anchorMin = new Vector2(0f, 0.5f);
+            fillArea.anchorMax = new Vector2(1f, 0.5f);
+            fillArea.offsetMin = new Vector2(2f, -2f);
+            fillArea.offsetMax = new Vector2(-2f, 2f);
+            Image fill = CreateImage("Fill", fillArea, new Color(PlateAmber.r, PlateAmber.g, PlateAmber.b, 0.85f));
+            RectTransform fillRect = fill.rectTransform;
+            fillRect.anchorMin = new Vector2(0f, 0.5f);
+            fillRect.anchorMax = new Vector2(0f, 0.5f);
             fillRect.pivot = new Vector2(0f, 0.5f);
-            fillRect.sizeDelta = new Vector2(0f, 0f);
+            fillRect.sizeDelta = new Vector2(0f, 4f);
 
-            // つまみ（丸ノブ）で操作感を出す
+            // フェーダーキャップ（矩形・オレンジ・中央に刻み線）
             var handleAreaGo = new GameObject("Handle Slide Area", typeof(RectTransform));
             handleAreaGo.transform.SetParent(sliderRect, false);
             RectTransform handleArea = handleAreaGo.GetComponent<RectTransform>();
-            handleArea.anchorMin = new Vector2(0f, 0f);
-            handleArea.anchorMax = new Vector2(1f, 1f);
-            handleArea.offsetMin = new Vector2(10f, 0f);
-            handleArea.offsetMax = new Vector2(-10f, 0f);
-
-            Image handleImage = CreateImage("Handle", handleArea, Color.white);
-            handleImage.raycastTarget = true;
-            UiKit.Panelize(handleImage, 10);
-            RectTransform handleRect = handleImage.rectTransform;
-            handleRect.sizeDelta = new Vector2(22f, 22f);
+            handleArea.anchorMin = new Vector2(0f, 0.5f);
+            handleArea.anchorMax = new Vector2(1f, 0.5f);
+            handleArea.offsetMin = new Vector2(7f, 0f);
+            handleArea.offsetMax = new Vector2(-7f, 0f);
+            Image cap = CreateImage("Handle", handleArea, AccentOrange);
+            cap.raycastTarget = true;
+            RectTransform capRect = cap.rectTransform;
+            capRect.sizeDelta = new Vector2(14f, 24f);
+            var capEdge = cap.gameObject.AddComponent<Outline>();
+            capEdge.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            capEdge.effectDistance = new Vector2(1.5f, -1.5f);
+            Image capLine = CreateImage("CapLine", capRect, new Color(0.12f, 0.08f, 0.04f, 0.9f));
+            capLine.rectTransform.anchorMin = new Vector2(0.5f, 0.15f);
+            capLine.rectTransform.anchorMax = new Vector2(0.5f, 0.85f);
+            capLine.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            capLine.rectTransform.sizeDelta = new Vector2(2f, 0f);
+            capLine.rectTransform.anchoredPosition = Vector2.zero;
 
             Slider slider = sliderGo.GetComponent<Slider>();
             slider.transition = Selectable.Transition.None;
+            slider.targetGraphic = hit;
             slider.fillRect = fillRect;
-            slider.handleRect = handleRect;
-            slider.targetGraphic = handleImage;
-            slider.direction = Slider.Direction.LeftToRight;
+            slider.handleRect = capRect;
             slider.minValue = 0f;
             slider.maxValue = 1f;
             slider.value = value;

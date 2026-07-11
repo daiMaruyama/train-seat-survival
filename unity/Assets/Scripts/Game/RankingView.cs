@@ -195,7 +195,7 @@ namespace TrainSurvival.Game
                 }
 
                 Color led = highlight ? LedAmber : top3 ? LedAmber : LedGreen;
-                int size = i == 0 ? 33 : 29;
+                int size = i == 0 ? 32 : 24; // 8の倍数＝ドットが割れない
 
                 // TOP3／今回記録は左端の信号色でも判別できる
                 if (top3 || highlight)
@@ -209,7 +209,7 @@ namespace TrainSurvival.Game
                 }
 
                 AddCell(row, (i + 1).ToString("00"), 0.00f, 0.09f, size, led, TextAnchor.MiddleCenter, bold: top3);
-                AddCell(row, RankTitle(i), 0.10f, 0.26f, size - 3, top3 ? LedAmber : LedDim, TextAnchor.MiddleLeft, bold: top3);
+                AddCell(row, RankTitle(i), 0.10f, 0.26f, 16, top3 ? LedAmber : LedDim, TextAnchor.MiddleLeft, bold: top3);
                 if (has)
                 {
                     RankingEntry e = entries[i];
@@ -237,6 +237,9 @@ namespace TrainSurvival.Game
             Text closeHint = FullText("CloseHint", br, 18, TextAnchor.MiddleRight, LedDim, 60f);
             closeHint.text = "ESC / パネル外クリックで閉じる";
             EdgeTopRect(closeHint.rectTransform, 180f + 10 * rowH + 22f, 32f, 60f);
+
+            // LED盤のドット格子（文字の上・ボタンの下に重ねる＝電光掲示板の質感）
+            UiKit.AddLedGrid(br, 0.28f);
 
             UiKit.MakeButton(br, new Vector2(0f, -(BoardH * 0.5f) + 56f), new Vector2(300f, 70f), "閉じる", 24, Close);
         }
@@ -335,7 +338,7 @@ namespace TrainSurvival.Game
             var go = new GameObject(goName, typeof(Text));
             go.transform.SetParent(parent, false);
             var text = go.GetComponent<Text>();
-            text.font = UiFont.Load();
+            text.font = UiFont.LoadLed(); // 発車標なのでドットフォント（8の倍数サイズ推奨）
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = color;

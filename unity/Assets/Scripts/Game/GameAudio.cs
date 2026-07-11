@@ -26,6 +26,7 @@ namespace TrainSurvival.Game
             [Min(0f)] public float fadeOutSeconds;
         }
 
+        private const string MasterVolumeKey = "MasterVolume";
         private const string BgmVolumeKey = "BgmVolume";
         private const string SeVolumeKey = "SeVolume";
 
@@ -68,6 +69,17 @@ namespace TrainSurvival.Game
 
         public static bool HasInstance => _instance != null;
 
+        /// <summary>マスター音量(0..1)。AudioListener 全体に効く（BGM/SEの上に掛かる）。</summary>
+        public float MasterVolume
+        {
+            get => AudioListener.volume;
+            set
+            {
+                AudioListener.volume = Mathf.Clamp01(value);
+                PlayerPrefs.SetFloat(MasterVolumeKey, AudioListener.volume);
+            }
+        }
+
         /// <summary>BGM 音量(0..1)。設定変更は即反映＆保存。</summary>
         public float BgmVolume
         {
@@ -94,6 +106,7 @@ namespace TrainSurvival.Game
 
         private void Setup()
         {
+            AudioListener.volume = PlayerPrefs.GetFloat(MasterVolumeKey, 1f);
             _bgmVolume = PlayerPrefs.GetFloat(BgmVolumeKey, 0.7f);
             _seVolume = PlayerPrefs.GetFloat(SeVolumeKey, 0.9f);
             _debugLogging = PlayerPrefs.GetInt("AudioDebug", 0) != 0;

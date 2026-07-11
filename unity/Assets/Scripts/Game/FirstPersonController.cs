@@ -23,8 +23,21 @@ namespace TrainSurvival.Game
         private float _pitch;
         private float _verticalVelocity;
 
+        private const string SensitivityKey = "MouseSensitivity";
+
         /// <summary>false の間は歩行を止める（例：着席中）。見回しはそのまま効く。</summary>
         public bool CanMove { get; set; } = true;
+
+        /// <summary>マウス感度。ポーズメニューから変更され、PlayerPrefs に保存される。</summary>
+        public float LookSensitivity
+        {
+            get => _lookSensitivity;
+            set
+            {
+                _lookSensitivity = Mathf.Clamp(value, 0.02f, 0.24f);
+                PlayerPrefs.SetFloat(SensitivityKey, _lookSensitivity);
+            }
+        }
 
         /// <summary>乗り換えなどで位置を戻すとき、前日の視線角度を引きずらないよう正面へ戻す。</summary>
         public void ResetLook(float yawDegrees = 0f)
@@ -58,6 +71,7 @@ namespace TrainSurvival.Game
 
         private void Start()
         {
+            _lookSensitivity = PlayerPrefs.GetFloat(SensitivityKey, _lookSensitivity);
             Cursor.lockState = CursorLockMode.Locked;
 
             Camera cam = Camera.main;
@@ -78,12 +92,7 @@ namespace TrainSurvival.Game
         {
             HandleLook();
             HandleMove();
-
-            // 使い勝手用：Esc でカーソルを解放し、テスト中に他をクリックできるように。
-            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
-            {
-                Cursor.lockState = CursorLockMode.None;
-            }
+            // ※ESC はポーズメニュー（PauseMenuView）が担当する（旧デバッグ用のカーソル解放は廃止）
         }
 
         private void HandleLook()

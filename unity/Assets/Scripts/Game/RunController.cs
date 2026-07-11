@@ -39,6 +39,27 @@ namespace TrainSurvival.Game
             {
                 new GameObject("DangerVisionFx").AddComponent<DangerVisionFx>();
             }
+
+            // ポーズメニュー（ESC）と、初回だけの研修しおり
+            if (FindFirstObjectByType<PauseMenuView>() == null)
+            {
+                new GameObject("PauseMenu").AddComponent<PauseMenuView>();
+            }
+            StartCoroutine(FirstTimeTutorial());
+        }
+
+        /// <summary>開幕カットインが晴れてから、初回のみ研修のしおりを開く。</summary>
+        private IEnumerator FirstTimeTutorial()
+        {
+            while (_cutIn != null && _cutIn.IsBusy)
+            {
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(0.25f);
+            if (!IsOver)
+            {
+                TutorialView.ShowFirstTime();
+            }
         }
 
         private void Update()

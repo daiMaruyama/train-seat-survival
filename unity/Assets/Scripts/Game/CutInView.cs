@@ -469,6 +469,7 @@ namespace TrainSurvival.Game
 
         private void BuildGameOver(RectTransform root)
         {
+            _paperFont = UiFont.LoadMincho(); // 書類（給与明細）は明朝で組む
             _overRoot = CreateStretched("GameOverRoot", root);
 
             _overDark = CreateImage("Dark", _overRoot, new Color(0.02f, 0.02f, 0.04f, 0f));
@@ -489,6 +490,7 @@ namespace TrainSurvival.Game
             pr.sizeDelta = new Vector2(W, H);
             UiKit.Panelize(paper, 14);
             UiKit.AddShadow(paper, 14, blur: 40, alpha: 0.55f, offset: new Vector2(0f, -14f));
+            UiKit.AddPaperGrain(pr); // 紙の繊維感
 
             // ヘッダ帯（紺）：給与明細書 ＋ 会社名
             Image header = CreateImage("Header", pr, TrainBody);
@@ -545,6 +547,7 @@ namespace TrainSurvival.Game
             hint.rectTransform.anchoredPosition = new Vector2(0f, by - 64f);
             hint.rectTransform.sizeDelta = new Vector2(900f, 30f);
 
+            _paperFont = null; // 明細の組版おわり（以降のUIは通常フォント）
             _overRoot.gameObject.SetActive(false);
         }
 
@@ -605,6 +608,7 @@ namespace TrainSurvival.Game
             head.rectTransform.anchorMax = new Vector2(0.15f, 1f);
 
             _comment = FullText("Comment", bg.rectTransform, 26, TextAnchor.MiddleLeft, SignInk, 0f);
+            _comment.font = UiFont.LoadHand(); // 査定は人事の直筆
             _comment.rectTransform.anchorMin = new Vector2(0.15f, 0f);
             _comment.rectTransform.anchorMax = new Vector2(1f, 1f);
             _comment.rectTransform.offsetMax = new Vector2(-16f, 0f);
@@ -662,7 +666,8 @@ namespace TrainSurvival.Game
 
             Text signText = CreateText("Text", fieldRect, 30, TextAnchor.MiddleLeft);
             signText.color = SignInk;
-            signText.fontStyle = FontStyle.BoldAndItalic;
+            signText.font = UiFont.LoadHand(); // 署名は直筆（毛筆）
+            signText.fontStyle = FontStyle.Normal;
             signText.supportRichText = false;
             Stretch(signText.rectTransform);
             signText.rectTransform.offsetMin = new Vector2(14f, 0f);
@@ -670,7 +675,8 @@ namespace TrainSurvival.Game
 
             Text placeholder = CreateText("Placeholder", fieldRect, 21, TextAnchor.MiddleLeft);
             placeholder.color = new Color(SignInk.r, SignInk.g, SignInk.b, 0.35f);
-            placeholder.fontStyle = FontStyle.Italic;
+            placeholder.font = UiFont.LoadHand();
+            placeholder.fontStyle = FontStyle.Normal;
             placeholder.text = "表示名を署名";
             Stretch(placeholder.rectTransform);
             placeholder.rectTransform.offsetMin = new Vector2(14f, 0f);
@@ -860,12 +866,15 @@ namespace TrainSurvival.Game
             return image;
         }
 
+        /// <summary>BuildGameOver（給与明細）中だけ書類用フォントへ差し替えるための一時上書き。</summary>
+        private static Font _paperFont;
+
         private static Text CreateText(string goName, Transform parent, int fontSize, TextAnchor alignment)
         {
             var go = new GameObject(goName, typeof(Text));
             go.transform.SetParent(parent, false);
             var text = go.GetComponent<Text>();
-            text.font = UiFont.Load();
+            text.font = _paperFont != null ? _paperFont : UiFont.Load();
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.raycastTarget = false;
