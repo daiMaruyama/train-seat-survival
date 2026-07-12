@@ -368,7 +368,9 @@ namespace TrainSurvival.Game
             var img = go.GetComponent<Image>();
             img.sprite = _paperGrain;
             img.type = Image.Type.Tiled;
-            img.color = new Color(1f, 1f, 1f, Mathf.Clamp01(alpha * 20f)); // 斑点自体が薄いので倍率で調整
+            // テクスチャ側にも濃淡があるため、強く掛けると文字より斑点が勝つ。
+            // 紙だと分かる最低限の濃さに留める。
+            img.color = new Color(1f, 1f, 1f, Mathf.Clamp01(alpha * 4f));
             img.raycastTarget = false;
             Fill(img.rectTransform);
         }
@@ -396,6 +398,207 @@ namespace TrainSurvival.Game
             rt.anchorMax = Vector2.one;
             rt.offsetMin = new Vector2(inset, inset);
             rt.offsetMax = new Vector2(-inset, -inset);
+        }
+
+        /// <summary>
+        /// 紙の上のスライダー（採用版）：明朝ラベル＋インクの線＋蛍光マーカーの塗り＋インクの丸つまみ。
+        /// 中吊り広告・小休止願など「紙もの」で共通に使う。topLeft は紙の左上基準。
+        /// </summary>
+        public static Slider MakePaperSlider(RectTransform paper, Vector2 topLeft, float totalWidth, string label, float value, float min, float max, UnityEngine.Events.UnityAction<float> onChanged)
+        {
+            Color ink = new Color(0.15f, 0.16f, 0.19f);
+            const float labelW = 68f;
+
+            var tagGo = new GameObject(label + "Tag", typeof(Text));
+            tagGo.transform.SetParent(paper, false);
+            var tag = tagGo.GetComponent<Text>();
+            tag.font = UiFont.LoadMincho();
+            tag.fontSize = 20;
+            tag.fontStyle = FontStyle.Bold;
+            tag.color = ink;
+            tag.alignment = TextAnchor.MiddleLeft;
+            tag.raycastTarget = false;
+            tag.horizontalOverflow = HorizontalWrapMode.Overflow;
+            tag.text = label;
+            RectTransform tagRect = tag.rectTransform;
+            tagRect.anchorMin = tagRect.anchorMax = new Vector2(0f, 1f);
+            tagRect.pivot = new Vector2(0f, 1f);
+            tagRect.anchoredPosition = topLeft;
+            tagRect.sizeDelta = new Vector2(labelW, 28f);
+
+            var sliderGo = new GameObject(label + "Slider", typeof(RectTransform), typeof(Image), typeof(Slider));
+            sliderGo.transform.SetParent(paper, false);
+            RectTransform sliderRect = sliderGo.GetComponent<RectTransform>();
+            sliderRect.anchorMin = sliderRect.anchorMax = new Vector2(0f, 1f);
+            sliderRect.pivot = new Vector2(0f, 1f);
+            sliderRect.anchoredPosition = new Vector2(topLeft.x + labelW + 8f, topLeft.y);
+            sliderRect.sizeDelta = new Vector2(Mathf.Max(60f, totalWidth - labelW - 8f), 28f);
+            Image hit = sliderGo.GetComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f);
+
+            // 小さい明朝ラベルはPlayerで欠落する環境があるため、呼び出し側で通常フォントの
+            // ラベルを重ねる。ここで作ったものはレイアウト幅の計算だけに使い非表示にする。
+            tag.gameObject.SetActive(false);
+
+            // 蛍光マーカーの塗り（線より太く、後ろに）
+            var fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
+            fillAreaGo.transform.SetParent(sliderRect, false);
+            RectTransform fillArea = fillAreaGo.GetComponent<RectTransform>();
+            fillArea.anchorMin = new Vector2(0f, 0.5f);
+            fillArea.anchorMax = new Vector2(1f, 0.5f);
+            fillArea.offsetMin = new Vector2(0f, -2f);
+            fillArea.offsetMax = new Vector2(0f, 2f);
+            Image fill = PlainImage("Fill", fillArea, new Color(1f, 0.58f, 0.12f, 0.8f), false);
+            RectTransform fillRect = fill.rectTransform;
+            fillRect.anchorMin = new Vector2(0f, 0.5f);
+            fillRect.anchorMax = new Vector2(0f, 0.5f);
+            fillRect.pivot = new Vector2(0f, 0.5f);
+            fillRect.sizeDelta = new Vector2(0f, 10f);
+
+            // インクの線
+            Image line = PlainImage("InkLine", sliderRect, new Color(ink.r, ink.g, ink.b, 0.95f), false);
+            line.rectTransform.anchorMin = new Vector2(0f, 0.5f);
+            line.rectTransform.anchorMax = new Vector2(1f, 0.5f);
+            line.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            line.rectTransform.sizeDelta = new Vector2(0f, 2f);
+            line.rectTransform.anchoredPosition = Vector2.zero;
+
+            // インクの丸つまみ
+            var handleAreaGo = new GameObject("Handle Slide Area", typeof(RectTransform));
+            handleAreaGo.transform.SetParent(sliderRect, false);
+            RectTransform handleArea = handleAreaGo.GetComponent<RectTransform>();
+            handleArea.anchorMin = new Vector2(0f, 0.5f);
+            handleArea.anchorMax = new Vector2(1f, 0.5f);
+            handleArea.offsetMin = new Vector2(8f, 0f);
+            handleArea.offsetMax = new Vector2(-8f, 0f);
+            Image knob = PlainImage("Handle", handleArea, ink, true);
+            RectTransform knobRect = knob.rectTransform;
+            knobRect.sizeDelta = new Vector2(16f, 16f);
+            Panelize(knob, 8, forceProcedural: true); // 正円
+
+            Slider slider = sliderGo.GetComponent<Slider>();
+            slider.transition = Selectable.Transition.None;
+            slider.targetGraphic = hit;
+            slider.fillRect = fillRect;
+            slider.handleRect = knobRect;
+            slider.minValue = min;
+            slider.maxValue = max;
+            slider.value = value;
+            if (onChanged != null)
+            {
+                slider.onValueChanged.AddListener(onChanged);
+            }
+            return slider;
+        }
+
+        /// <summary>
+        /// 機器盤のフェーダー（旧版）。ドット文字ラベル＋インセットの溝＋目盛り＋
+        /// 矩形キャップ＋通電表示のアンバーライン。※紙もの画面では MakePaperSlider を使う。
+        /// </summary>
+        public static Slider MakeFader(RectTransform parent, Vector2 topLeft, float totalWidth, string label, float value, float min, float max, UnityEngine.Events.UnityAction<float> onChanged)
+        {
+            Color amber = new Color(1f, 0.72f, 0.2f);
+            Color orange = new Color(0.95f, 0.45f, 0.15f);
+            const float labelW = 84f;
+            float faderW = Mathf.Max(60f, totalWidth - labelW - 8f);
+
+            var tagGo = new GameObject(label + "Tag", typeof(Text));
+            tagGo.transform.SetParent(parent, false);
+            var tag = tagGo.GetComponent<Text>();
+            tag.font = UiFont.LoadLed(); // 機器ラベルはドット文字
+            tag.fontSize = 16;
+            tag.color = new Color(0.85f, 0.88f, 0.9f, 0.85f);
+            tag.alignment = TextAnchor.MiddleLeft;
+            tag.raycastTarget = false;
+            tag.horizontalOverflow = HorizontalWrapMode.Overflow;
+            RectTransform tagRect = tag.rectTransform;
+            tagRect.anchorMin = tagRect.anchorMax = new Vector2(0f, 1f);
+            tagRect.pivot = new Vector2(0f, 1f);
+            tagRect.anchoredPosition = topLeft;
+            tagRect.sizeDelta = new Vector2(labelW, 26f);
+
+            var sliderGo = new GameObject(label + "Fader", typeof(RectTransform), typeof(Image), typeof(Slider));
+            sliderGo.transform.SetParent(parent, false);
+            RectTransform sliderRect = sliderGo.GetComponent<RectTransform>();
+            sliderRect.anchorMin = sliderRect.anchorMax = new Vector2(0f, 1f);
+            sliderRect.pivot = new Vector2(0f, 1f);
+            sliderRect.anchoredPosition = new Vector2(topLeft.x + labelW + 8f, topLeft.y);
+            sliderRect.sizeDelta = new Vector2(faderW, 26f);
+            Image hit = sliderGo.GetComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f); // 透明の当たり判定
+
+            // 溝（インセットの細いスリット）
+            Image groove = PlainImage("Groove", sliderRect, new Color(0f, 0f, 0f, 0.62f), false);
+            RectTransform gr = groove.rectTransform;
+            gr.anchorMin = new Vector2(0f, 0.5f);
+            gr.anchorMax = new Vector2(1f, 0.5f);
+            gr.pivot = new Vector2(0.5f, 0.5f);
+            gr.sizeDelta = new Vector2(0f, 6f);
+            gr.anchoredPosition = Vector2.zero;
+            var grooveEdge = groove.gameObject.AddComponent<Outline>();
+            grooveEdge.effectColor = new Color(1f, 1f, 1f, 0.08f);
+            grooveEdge.effectDistance = new Vector2(0f, -1f);
+
+            // 目盛り（下側に5本）
+            for (int i = 0; i <= 4; i++)
+            {
+                Image tick = PlainImage("Tick", sliderRect, new Color(1f, 1f, 1f, 0.22f), false);
+                RectTransform tr = tick.rectTransform;
+                tr.anchorMin = tr.anchorMax = new Vector2(i / 4f, 0f);
+                tr.pivot = new Vector2(0.5f, 0f);
+                tr.anchoredPosition = new Vector2(i == 0 ? 3f : i == 4 ? -3f : 0f, -1f);
+                tr.sizeDelta = new Vector2(2f, 5f);
+            }
+
+            // 塗り（アンバーの通電ライン）
+            var fillAreaGo = new GameObject("Fill Area", typeof(RectTransform));
+            fillAreaGo.transform.SetParent(sliderRect, false);
+            RectTransform fillArea = fillAreaGo.GetComponent<RectTransform>();
+            fillArea.anchorMin = new Vector2(0f, 0.5f);
+            fillArea.anchorMax = new Vector2(1f, 0.5f);
+            fillArea.offsetMin = new Vector2(2f, -2f);
+            fillArea.offsetMax = new Vector2(-2f, 2f);
+            Image fill = PlainImage("Fill", fillArea, new Color(amber.r, amber.g, amber.b, 0.85f), false);
+            RectTransform fillRect = fill.rectTransform;
+            fillRect.anchorMin = new Vector2(0f, 0.5f);
+            fillRect.anchorMax = new Vector2(0f, 0.5f);
+            fillRect.pivot = new Vector2(0f, 0.5f);
+            fillRect.sizeDelta = new Vector2(0f, 4f);
+
+            // フェーダーキャップ（矩形・オレンジ・刻み線）
+            var handleAreaGo = new GameObject("Handle Slide Area", typeof(RectTransform));
+            handleAreaGo.transform.SetParent(sliderRect, false);
+            RectTransform handleArea = handleAreaGo.GetComponent<RectTransform>();
+            handleArea.anchorMin = new Vector2(0f, 0.5f);
+            handleArea.anchorMax = new Vector2(1f, 0.5f);
+            handleArea.offsetMin = new Vector2(7f, 0f);
+            handleArea.offsetMax = new Vector2(-7f, 0f);
+            Image cap = PlainImage("Handle", handleArea, orange, true);
+            RectTransform capRect = cap.rectTransform;
+            capRect.sizeDelta = new Vector2(14f, 24f);
+            var capEdge = cap.gameObject.AddComponent<Outline>();
+            capEdge.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            capEdge.effectDistance = new Vector2(1.5f, -1.5f);
+            Image capLine = PlainImage("CapLine", capRect, new Color(0.12f, 0.08f, 0.04f, 0.9f), false);
+            capLine.rectTransform.anchorMin = new Vector2(0.5f, 0.15f);
+            capLine.rectTransform.anchorMax = new Vector2(0.5f, 0.85f);
+            capLine.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            capLine.rectTransform.sizeDelta = new Vector2(2f, 0f);
+            capLine.rectTransform.anchoredPosition = Vector2.zero;
+
+            Slider slider = sliderGo.GetComponent<Slider>();
+            slider.transition = Selectable.Transition.None;
+            slider.targetGraphic = hit;
+            slider.fillRect = fillRect;
+            slider.handleRect = capRect;
+            slider.minValue = min;
+            slider.maxValue = max;
+            slider.value = value;
+            if (onChanged != null)
+            {
+                slider.onValueChanged.AddListener(onChanged);
+            }
+            return slider;
         }
 
         /// <summary>

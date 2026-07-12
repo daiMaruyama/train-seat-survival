@@ -78,7 +78,7 @@ namespace TrainSurvival.Game
                 _dayText.text = $"{_director.Leg + 1}日目";
                 _routeText.text = $"駅 {_director.CurrentStation}/{_director.StationCount - 1}　生存 {_director.TotalStationsSurvived}駅";
                 _statusText.text = _director.IsEndOfLine ? "終点"
-                                 : _director.IsAtStation ? "🚉 停車中"
+                                 : _director.IsAtStation ? "停車中"
                                  : $"次の駅まで {_director.SecondsToNextStation:0}s";
             }
 
@@ -219,6 +219,17 @@ namespace TrainSurvival.Game
             _prompt.rectTransform.anchoredPosition = new Vector2(0f, 70f);
             _prompt.rectTransform.sizeDelta = new Vector2(500f, 32f);
             UiKit.Outline(_prompt);
+
+            // 右下：小休止（ポーズ）の動線ヒント（常設・控えめ）
+            Text escHint = CreateText("EscHint", root, 20, TextAnchor.LowerRight);
+            escHint.text = "［ESC］小休止";
+            escHint.color = new Color(1f, 1f, 1f, 0.55f);
+            escHint.fontStyle = FontStyle.Bold;
+            escHint.rectTransform.anchorMin = escHint.rectTransform.anchorMax = new Vector2(1f, 0f);
+            escHint.rectTransform.pivot = new Vector2(1f, 0f);
+            escHint.rectTransform.anchoredPosition = new Vector2(-24f, 18f);
+            escHint.rectTransform.sizeDelta = new Vector2(240f, 26f);
+            UiKit.Outline(escHint, 1.2f, 0.4f);
 
             // 中央：ドット＋ティックのクロスヘア（"+"文字をやめる）
             UiKit.Crosshair(root, new Color(1f, 1f, 1f, 0.85f));

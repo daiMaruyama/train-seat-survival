@@ -49,6 +49,15 @@ namespace TrainSurvival.Game
                 return;
             }
 
+            // 小休止・研修・ランキング表示中は席取り操作を受け付けない
+            // （timeScale=0 でも Update は回るので、ここで止めないとポーズ越しに座れてしまう）
+            if (PauseMenuView.IsOpen || TutorialView.IsOpen || RankingView.IsOpen)
+            {
+                CanSitNow = false;
+                Highlight(null);
+                return;
+            }
+
             SeatMarker aim = AimedSeat();
             bool grabbable = aim != null && _director.IsSeatGrabbable(aim.Index);
             CanSitNow = grabbable;

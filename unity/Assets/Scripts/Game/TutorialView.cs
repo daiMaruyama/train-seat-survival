@@ -47,6 +47,7 @@ namespace TrainSurvival.Game
             _open = go.AddComponent<TutorialView>();
             _open.Build();
             Time.timeScale = 0f;
+            AudioListener.pause = true; // 研修中は車内の音も止める
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
@@ -60,11 +61,22 @@ namespace TrainSurvival.Game
             }
         }
 
+        private void OnDestroy()
+        {
+            // シーン遷移などで Dismiss を通らず消えた場合も、音の凍結を残さない
+            if (_open == this)
+            {
+                _open = null;
+                AudioListener.pause = false;
+            }
+        }
+
         private void Dismiss()
         {
             PlayerPrefs.SetInt(SeenKey, 1);
             PlayerPrefs.Save();
             Time.timeScale = 1f;
+            AudioListener.pause = false;
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
             _open = null;
