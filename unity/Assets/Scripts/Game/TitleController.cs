@@ -13,7 +13,7 @@ namespace TrainSurvival.Game
     /// タイトル画面「座れ！サラリーマン！」。
     /// ・背景は実際の車内＋車窓を流用し、席で力尽きて寝落ちしたサラリーマンを画面右手に主役として据える
     /// ・文字組みは駅サイン調の落ち着いた配色（紺／クリーム／差し色オレンジ）で、蛍光マーカー風の
-    /// 　ハイライト帯を一度だけ横に走らせて“強さ”を出す。常時揺れる装飾は置かない
+    /// 　ハイライト帯を一度だけ横に走らせて“強さ”を出す。中吊り広告だけ吊り元からごく浅く揺らす
     /// ・スタート導線（ボタン＋ENTER/SPACE）、BGM/SE 音量スライダー、下段のLED運行案内
     /// ・倒れ込む本格アニメは削除済みモーキャップに依存するため、_dropClip を割り当てれば差し替わる。
     /// 　未割り当てのときは着席ポーズ＋首のうとうと運動でフォールバックする
@@ -126,6 +126,29 @@ namespace TrainSurvival.Game
             {
                 _cameraTransform.position = _cameraBasePosition
                     + new Vector3(Mathf.Sin(t * 0.7f) * 0.015f, Mathf.Sin(t * 1.1f) * 0.010f, 0f);
+            }
+
+            // 紙面を回すと外周・文字・細線が小数角度で歪むため、紙は固定する。
+            // 吊り紐・留め具・柔らかい影だけを動かし、車内の揺れを示す。
+            if (_adPanel != null)
+            {
+                float sway = Mathf.Sin(t * 0.7f);
+                for (int i = 0; i < _adStrings.Length; i++)
+                {
+                    if (_adStrings[i] != null)
+                    {
+                        _adStrings[i].localRotation = Quaternion.Euler(0f, 0f, sway * 0.75f);
+                        _adStrings[i].sizeDelta = new Vector2(2.5f, 52f + Mathf.Sin(t * 0.85f + i * 0.4f) * 0.8f);
+                    }
+                    if (_adClips[i] != null)
+                    {
+                        _adClips[i].localRotation = Quaternion.Euler(0f, 0f, -sway * 0.55f);
+                    }
+                }
+                if (_adPaperShadow != null)
+                {
+                    _adPaperShadow.effectDistance = new Vector2(4f + sway * 1.25f, -4f);
+                }
             }
 
             // スタートボタンをそっと脈打たせる（ホバーの色替えは UiKit.MakeButton 側が担当）
@@ -548,14 +571,14 @@ namespace TrainSurvival.Game
             Anchor(kickerLine.rectTransform, new Vector2(0f, 1f), new Vector2(98f, -206f), new Vector2(190f, 6f));
             UiKit.Panelize(kickerLine, 3);
 
-            // タイトル本体（クリアな一枚影＋2行目に蛍光マーカー帯）
-            // 2行目のマーカー帯（テキストより先に生成して背面へ）
-            Image highlightImg = CreateImage("Highlight", _titleGroupRect, new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.9f));
+            // タイトル本体。太い面を敷かず、2行目の足元に路線カラーの細い下線だけを置く。
+            // ロゴ自体を主役にしつつ、登場時に線が走る演出は残す。
+            Image highlightImg = CreateImage("Highlight", _titleGroupRect, new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, 0.95f));
             _highlight = highlightImg.rectTransform;
-            Anchor(_highlight, new Vector2(0f, 1f), new Vector2(92f, -430f), new Vector2(660f, 96f));
+            Anchor(_highlight, new Vector2(0f, 1f), new Vector2(104f, -520f), new Vector2(530f, 12f));
             _highlight.pivot = new Vector2(0f, 0.5f);
-            _highlightWidth = 660f;
-            UiKit.Panelize(highlightImg, 8);
+            _highlightWidth = 530f;
+            UiKit.Panelize(highlightImg, 6, forceProcedural: true);
 
             CreateTitleText("TitleShadow", _titleGroupRect, new Vector2(106f, -234f), new Color(0f, 0f, 0f, 0.55f));
             Text titleMain = CreateTitleText("Title", _titleGroupRect, new Vector2(100f, -228f), Color.white);
@@ -647,6 +670,9 @@ namespace TrainSurvival.Game
         private static readonly Color PaperCream = new Color(0.95f, 0.93f, 0.87f);
         private static readonly Color PaperInk = new Color(0.15f, 0.16f, 0.19f);
         private RectTransform _adPanel; // 中吊りの揺れ用
+        private readonly RectTransform[] _adStrings = new RectTransform[2];
+        private readonly RectTransform[] _adClips = new RectTransform[2];
+        private Shadow _adPaperShadow;
 
         /// <summary>
         /// 音量パネル＝「中吊り広告」。天井から紐で吊られた紙のご案内（紙＋明朝＝好評だった書類の言語）。
@@ -667,10 +693,13 @@ namespace TrainSurvival.Game
             _adPanel.sizeDelta = new Vector2(320f, 240f);
 
             // 吊り紐2本：紙の両角の真上から垂直に（実物の中吊りと同じ＝安定して見える）
-            foreach (float x in new[] { -110f, 110f })
+            float[] stringX = { -110f, 110f };
+            for (int i = 0; i < stringX.Length; i++)
             {
+                float x = stringX[i];
                 Image str = CreateImage("String", _adPanel, new Color(0.1f, 0.1f, 0.12f, 0.85f));
                 RectTransform sr = str.rectTransform;
+                _adStrings[i] = sr;
                 sr.anchorMin = sr.anchorMax = new Vector2(0.5f, 1f);
                 sr.pivot = new Vector2(0.5f, 1f);
                 sr.anchoredPosition = new Vector2(x, 0f);
@@ -679,6 +708,7 @@ namespace TrainSurvival.Game
                 // 留め具（クリップ）＝紙が「保持されている」説得力
                 Image clip = CreateImage("Clip", _adPanel, new Color(0.25f, 0.27f, 0.3f));
                 RectTransform cr = clip.rectTransform;
+                _adClips[i] = cr;
                 cr.anchorMin = cr.anchorMax = new Vector2(0.5f, 1f);
                 cr.pivot = new Vector2(0.5f, 0.5f);
                 cr.anchoredPosition = new Vector2(x, -51f);
@@ -694,13 +724,31 @@ namespace TrainSurvival.Game
             rect.sizeDelta = new Vector2(300f, 186f);
             // 紙の傾きは無し（スライダーの線が「曲がって見える」ため水平を保つ。揺れは吊り元の微振動だけ）
             UiKit.Panelize(paper, 4, forceProcedural: true);
-            var edge = paper.gameObject.AddComponent<Shadow>();
-            edge.effectColor = new Color(0f, 0f, 0f, 0.35f);
-            edge.effectDistance = new Vector2(4f, -4f);
+            _adPaperShadow = paper.gameObject.AddComponent<Shadow>();
+            _adPaperShadow.effectColor = new Color(0f, 0f, 0f, 0.35f);
+            _adPaperShadow.effectDistance = new Vector2(4f, -4f);
             UiKit.AddPaperGrain(rect);
 
+            // 紙と同じ位置に、描画・操作専用の透明レイヤーを重ねる。
+            // 紙面・文字・当たり判定を同じ水平座標に保ち、装飾だけを独立して動かす。
+            var contentGo = new GameObject("StableContent", typeof(RectTransform));
+            RectTransform adContent = contentGo.GetComponent<RectTransform>();
+            adContent.SetParent(_adPanel, false);
+            adContent.anchorMin = adContent.anchorMax = new Vector2(0.5f, 1f);
+            adContent.pivot = new Vector2(0.5f, 1f);
+            adContent.anchoredPosition = Vector2.zero;
+            adContent.sizeDelta = _adPanel.sizeDelta;
+
+            var contentPaperGo = new GameObject("ContentPaper", typeof(RectTransform));
+            RectTransform contentRect = contentPaperGo.GetComponent<RectTransform>();
+            contentRect.SetParent(adContent, false);
+            contentRect.anchorMin = contentRect.anchorMax = new Vector2(0.5f, 1f);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.anchoredPosition = new Vector2(0f, -50f);
+            contentRect.sizeDelta = new Vector2(300f, 186f);
+
             // 見出し（明朝）＋オレンジの罫
-            Text head = CreateText("Head", rect, 22, TextAnchor.MiddleCenter);
+            Text head = CreateText("Head", contentRect, 22, TextAnchor.MiddleCenter);
             head.font = UiFont.LoadMincho();
             head.text = "— 車内放送 音量のご案内 —";
             head.color = PaperInk;
@@ -709,16 +757,16 @@ namespace TrainSurvival.Game
             head.rectTransform.pivot = new Vector2(0.5f, 1f);
             head.rectTransform.offsetMin = new Vector2(0f, head.rectTransform.offsetMin.y);
             head.rectTransform.offsetMax = new Vector2(0f, head.rectTransform.offsetMax.y);
-            Image headRule = CreateImage("HeadRule", rect, AccentOrange);
+            Image headRule = CreateImage("HeadRule", contentRect, AccentOrange);
             Anchor(headRule.rectTransform, new Vector2(0f, 1f), new Vector2(24f, -40f), new Vector2(252f, 2.5f));
             headRule.rectTransform.pivot = new Vector2(0f, 1f);
 
-            UiKit.MakePaperSlider(rect, new Vector2(24f, -54f), 252f, "全体", audio.MasterVolume, 0f, 1f, v => audio.MasterVolume = v);
-            UiKit.MakePaperSlider(rect, new Vector2(24f, -96f), 252f, "音楽", audio.BgmVolume, 0f, 1f, v => audio.BgmVolume = v);
-            UiKit.MakePaperSlider(rect, new Vector2(24f, -138f), 252f, "効果音", audio.SeVolume, 0f, 1f, v => audio.SeVolume = v);
-            HangingAdLabel(rect, -54f, "全体");
-            HangingAdLabel(rect, -96f, "音楽");
-            HangingAdLabel(rect, -138f, "効果音");
+            UiKit.MakePaperSlider(contentRect, new Vector2(24f, -54f), 252f, "全体", audio.MasterVolume, 0f, 1f, v => audio.MasterVolume = v);
+            UiKit.MakePaperSlider(contentRect, new Vector2(24f, -96f), 252f, "音楽", audio.BgmVolume, 0f, 1f, v => audio.BgmVolume = v);
+            UiKit.MakePaperSlider(contentRect, new Vector2(24f, -138f), 252f, "効果音", audio.SeVolume, 0f, 1f, v => audio.SeVolume = v);
+            HangingAdLabel(contentRect, -54f, "全体");
+            HangingAdLabel(contentRect, -96f, "音楽");
+            HangingAdLabel(contentRect, -138f, "効果音");
         }
 
         private static void HangingAdLabel(RectTransform paper, float y, string label)

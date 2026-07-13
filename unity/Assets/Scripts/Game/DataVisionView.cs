@@ -45,6 +45,12 @@ namespace TrainSurvival.Game
             _activeUntil = Time.unscaledTime + Mathf.Max(0f, duration);
         }
 
+        /// <summary>その日いっぱい有効化（翌日への切り替え＝Transfer の Deactivate で切れる）。</summary>
+        public void ActivateForDay()
+        {
+            _activeUntil = float.PositiveInfinity;
+        }
+
         /// <summary>効果を即オフにする（翌日への切り替えで持ち越さないため）。</summary>
         public void Deactivate()
         {

@@ -149,7 +149,10 @@ namespace TrainSurvival.Game
 
         private static bool Pressed()
         {
-            return Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
+            // 着席は E か左クリックのどちらでも（マウスだけで遊べる人にも席取りを開放）
+            bool key = Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
+            bool click = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+            return key || click;
         }
 
         private void EnsureCamera()

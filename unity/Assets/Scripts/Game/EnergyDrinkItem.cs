@@ -3,13 +3,13 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// エナジードリンク（金の缶）。コーヒーの上位互換で大きく回復するが、1ランに1本しか出ない。
+    /// エナジードリンク（金の缶）。飲めば体力が全回復する一発逆転の切り札。1ランに1本しか出ない。
     /// 挙動は <see cref="CoffeeCupItem"/> と同型：回転＋ボブ＋金色の光、プレイヤー接触で自動使用、
     /// 消費後は非表示（<see cref="ItemSpawner"/> のプールが日替わりで撒き直す）。
     /// </summary>
     public sealed class EnergyDrinkItem : MonoBehaviour
     {
-        [SerializeField] private float _staminaRestore = 60f;
+        [SerializeField] private float _staminaRestore = 999f; // 実質全回復（上限でクランプされる）
         [SerializeField] private float _spinSpeed = 130f;
         [SerializeField] private float _bobAmplitude = 0.055f;
         [SerializeField] private float _bobSpeed = 2.6f;

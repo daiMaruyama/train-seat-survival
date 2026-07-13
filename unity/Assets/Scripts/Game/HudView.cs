@@ -28,6 +28,7 @@ namespace TrainSurvival.Game
         private StaminaSystem _stamina;
         private CommuteDirector _director;
         private PlayerSit _player;
+        private FirstPersonController _fpc;
 
         private RectTransform _card;
         private RectTransform _fill;
@@ -53,6 +54,7 @@ namespace TrainSurvival.Game
             _stamina = FindFirstObjectByType<StaminaSystem>();
             _director = FindFirstObjectByType<CommuteDirector>();
             _player = FindFirstObjectByType<PlayerSit>();
+            _fpc = FindFirstObjectByType<FirstPersonController>();
             Build();
         }
 
@@ -77,16 +79,39 @@ namespace TrainSurvival.Game
             {
                 _dayText.text = $"{_director.Leg + 1}日目";
                 _routeText.text = $"駅 {_director.CurrentStation}/{_director.StationCount - 1}　生存 {_director.TotalStationsSurvived}駅";
-                _statusText.text = _director.IsEndOfLine ? "終点"
-                                 : _director.IsAtStation ? "停車中"
-                                 : $"次の駅まで {_director.SecondsToNextStation:0}s";
+                string status = _director.IsEndOfLine ? "終点"
+                              : _director.IsAtStation ? "停車中"
+                              : $"次の駅まで {_director.SecondsToNextStation:0}s";
+                // 効いているバフを付記（モーレツ＝加速／メガネ＝降車予測）
+                if (_fpc != null && _fpc.SpeedScale > 1.01f)
+                {
+                    status += "　◎モーレツ";
+                }
+                if (DataVisionView.Instance != null && DataVisionView.Instance.IsActive)
+                {
+                    status += "　◎メガネ";
+                }
+                _statusText.text = status;
             }
 
             if (_player != null)
             {
-                _prompt.text = _player.IsSeated ? "次の日まで休憩"
-                             : _player.CanSitNow ? "E    座る"
-                             : string.Empty;
+                if (_player.IsSeated)
+                {
+                    _prompt.text = "次の日まで休憩";
+                    _prompt.color = DimText;
+                }
+                else if (_player.CanSitNow)
+                {
+                    // 空席に照準が合った瞬間だけ、中央に大きく行動喚起（キー＋クリック両方を明示）
+                    _prompt.text = "［ Ｅ ／ 左クリック ］ 座る";
+                    float pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 6f);
+                    _prompt.color = new Color(AccentOrange.r, AccentOrange.g, AccentOrange.b, pulse);
+                }
+                else
+                {
+                    _prompt.text = string.Empty;
+                }
             }
         }
 
@@ -211,29 +236,98 @@ namespace TrainSurvival.Game
             Anchor(_statusText.rectTransform, new Vector2(0f, 1f), new Vector2(24f, -94f), new Vector2(360f, 26f));
             _statusText.rectTransform.pivot = new Vector2(0f, 1f);
 
-            // ---- 下中央：操作プロンプト／中央：クロスヘア ----
-            _prompt = CreateText("Prompt", root, 24, TextAnchor.LowerCenter);
-            _prompt.rectTransform.anchorMin = new Vector2(0.5f, 0f);
-            _prompt.rectTransform.anchorMax = new Vector2(0.5f, 0f);
-            _prompt.rectTransform.pivot = new Vector2(0.5f, 0f);
-            _prompt.rectTransform.anchoredPosition = new Vector2(0f, 70f);
-            _prompt.rectTransform.sizeDelta = new Vector2(500f, 32f);
+            // ---- 中央下：クロスヘア直下の行動喚起プロンプト ----
+            _prompt = CreateText("Prompt", root, 26, TextAnchor.MiddleCenter);
+            _prompt.fontStyle = FontStyle.Bold;
+            _prompt.rectTransform.anchorMin = _prompt.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            _prompt.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            _prompt.rectTransform.anchoredPosition = new Vector2(0f, -72f);
+            _prompt.rectTransform.sizeDelta = new Vector2(560f, 36f);
             UiKit.Outline(_prompt);
-
-            // 右下：小休止（ポーズ）の動線ヒント（常設・控えめ）
-            Text escHint = CreateText("EscHint", root, 20, TextAnchor.LowerRight);
-            escHint.text = "［ESC］小休止";
-            escHint.color = new Color(1f, 1f, 1f, 0.55f);
-            escHint.fontStyle = FontStyle.Bold;
-            escHint.rectTransform.anchorMin = escHint.rectTransform.anchorMax = new Vector2(1f, 0f);
-            escHint.rectTransform.pivot = new Vector2(1f, 0f);
-            escHint.rectTransform.anchoredPosition = new Vector2(-24f, 18f);
-            escHint.rectTransform.sizeDelta = new Vector2(240f, 26f);
-            UiKit.Outline(escHint, 1.2f, 0.4f);
 
             // 中央：ドット＋ティックのクロスヘア（"+"文字をやめる）
             UiKit.Crosshair(root, new Color(1f, 1f, 1f, 0.85f));
+
+            // ---- 下中央：常設の操作レジェンド（キーキャップ表示で操作を一目で伝える）----
+            BuildControlLegend(root);
             // ※日替わり・ゲームオーバーの演出は CutInView が担当（ここは常時HUDのみ）
+        }
+
+        /// <summary>
+        /// 画面下中央に常設する操作レジェンド。キーキャップ風のチップ＋説明を横並びにして、
+        /// 「WASD 移動／マウス 見まわす／E・左クリック 座る／ESC 小休止」を一目で伝える。
+        /// レイアウトは HorizontalLayoutGroup＋ContentSizeFitter に任せる（文字幅に自動追従）。
+        /// </summary>
+        private void BuildControlLegend(RectTransform root)
+        {
+            var legend = new GameObject("Controls", typeof(RectTransform));
+            var lr = legend.GetComponent<RectTransform>();
+            lr.SetParent(root, false);
+            lr.anchorMin = lr.anchorMax = new Vector2(0.5f, 0f);
+            lr.pivot = new Vector2(0.5f, 0f);
+            lr.anchoredPosition = new Vector2(0f, 24f);
+            var row = legend.AddComponent<HorizontalLayoutGroup>();
+            row.spacing = 26f;
+            row.childAlignment = TextAnchor.MiddleCenter;
+            row.childControlWidth = row.childControlHeight = true;
+            row.childForceExpandWidth = row.childForceExpandHeight = false;
+            var rowFit = legend.AddComponent<ContentSizeFitter>();
+            rowFit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            rowFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            MakeControlItem(lr, "WASD", "移動");
+            MakeControlItem(lr, "マウス", "見まわす");
+            MakeControlItem(lr, "E ／ 左クリック", "座る");
+            MakeControlItem(lr, "ESC", "小休止");
+        }
+
+        /// <summary>「キーキャップ＋説明」1項目。</summary>
+        private void MakeControlItem(Transform parent, string key, string desc)
+        {
+            var item = new GameObject("Item", typeof(RectTransform));
+            item.transform.SetParent(parent, false);
+            var hl = item.AddComponent<HorizontalLayoutGroup>();
+            hl.spacing = 9f;
+            hl.childAlignment = TextAnchor.MiddleCenter;
+            hl.childControlWidth = hl.childControlHeight = true;
+            hl.childForceExpandWidth = hl.childForceExpandHeight = false;
+            var fit = item.AddComponent<ContentSizeFitter>();
+            fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            MakeKeyCap(item.transform, key);
+            Text d = CreateText("Desc", item.transform, 19, TextAnchor.MiddleLeft);
+            d.text = desc;
+            d.color = new Color(1f, 1f, 1f, 0.85f);
+            d.fontStyle = FontStyle.Bold;
+            UiKit.Outline(d);
+        }
+
+        /// <summary>暗い角丸チップに白フチのキー名を載せた"キーキャップ"。文字幅に合わせて自動で伸縮する。</summary>
+        private void MakeKeyCap(Transform parent, string key)
+        {
+            var capGo = new GameObject("Cap", typeof(RectTransform));
+            capGo.transform.SetParent(parent, false);
+            var cap = capGo.AddComponent<Image>();
+            cap.color = new Color(0.05f, 0.06f, 0.10f, 0.9f);
+            cap.raycastTarget = false;
+            UiKit.Panelize(cap, 8, forceProcedural: true);
+            var edge = capGo.AddComponent<Outline>();
+            edge.effectColor = new Color(1f, 1f, 1f, 0.55f);
+            edge.effectDistance = new Vector2(1.4f, -1.4f);
+            var pad = capGo.AddComponent<HorizontalLayoutGroup>();
+            pad.padding = new RectOffset(13, 13, 5, 8);
+            pad.childAlignment = TextAnchor.MiddleCenter;
+            pad.childControlWidth = pad.childControlHeight = true;
+            pad.childForceExpandWidth = pad.childForceExpandHeight = false;
+            var capFit = capGo.AddComponent<ContentSizeFitter>();
+            capFit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            capFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            Text t = CreateText("Key", capGo.transform, 18, TextAnchor.MiddleCenter);
+            t.text = key;
+            t.fontStyle = FontStyle.Bold;
+            t.color = new Color(1f, 0.95f, 0.86f);
         }
 
         /// <summary>バー内側を左詰めで伸びる矩形にする共通設定。</summary>

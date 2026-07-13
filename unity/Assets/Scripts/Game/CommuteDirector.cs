@@ -390,7 +390,12 @@ namespace TrainSurvival.Game
             float ramp = Mathf.Max(0f, _drainRampPerDay);
             float uncapped = 1f + ramp * _leg;
             stamina.DrainMultiplier = uncapped;
-            stamina.TemporaryDrainScale = 1f; // モーレツ等の「その日だけ」効果は翌日へ持ち越さない
+            stamina.TemporaryDrainScale = 1f; // 「その日だけ」効果は翌日へ持ち越さない
+            var fpc = _player.GetComponent<FirstPersonController>();
+            if (fpc != null)
+            {
+                fpc.SpeedScale = 1f; // モーレツの加速も翌日リセット
+            }
         }
 
         /// <summary>開始時・乗り換え時のプレイヤー初期位置。前日座った席に残さず、ドア前の通路へ戻す。</summary>

@@ -3,13 +3,14 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 栄養ドリンク「モーレツ」（赤い小瓶）。飲むと"その日だけ"立ち消耗が半分になるドーピング。
-    /// 効果は <see cref="StaminaSystem.TemporaryDrainScale"/> に乗り、乗り換え（翌日）でリセットされる。
+    /// 栄養ドリンク「モーレツ」（赤い小瓶）。飲むと"その日だけ"移動速度が上がるドーピング＝
+    /// 空いた席へ猛ダッシュできる（椅子取りの主導権を金で買う）。効果は
+    /// <see cref="FirstPersonController.SpeedScale"/> に乗り、乗り換え（翌日）でリセットされる。
     /// 挙動はコーヒーと同型（回転＋ボブ＋赤い光、接触で自動使用、消費後はプールへ）。
     /// </summary>
     public sealed class MoretsuDrinkItem : MonoBehaviour
     {
-        [SerializeField, Range(0.1f, 1f)] private float _drainScale = 0.5f; // その日の消耗倍率
+        [SerializeField, Range(1f, 2.5f)] private float _speedScale = 1.5f; // その日の移動速度倍率
         [SerializeField] private float _spinSpeed = 110f;
         [SerializeField] private float _bobAmplitude = 0.05f;
         [SerializeField] private float _bobSpeed = 2.4f;
@@ -54,14 +55,14 @@ namespace TrainSurvival.Game
 
         private void OnTriggerEnter(Collider other)
         {
-            var stamina = other.GetComponentInParent<StaminaSystem>();
-            if (stamina == null || _consumed)
+            var fpc = other.GetComponentInParent<FirstPersonController>();
+            if (fpc == null || _consumed)
             {
                 return;
             }
             _consumed = true;
             GameAudio.Instance.Play(GameAudio.Sfx.Coffee, 1.2f); // 高めのピッチ＝キュッと一杯
-            stamina.TemporaryDrainScale = Mathf.Min(stamina.TemporaryDrainScale, _drainScale);
+            fpc.SpeedScale = Mathf.Max(fpc.SpeedScale, _speedScale); // その日だけモーレツに動ける
             gameObject.SetActive(false);
         }
     }

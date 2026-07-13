@@ -4,7 +4,7 @@ namespace TrainSurvival.Game
 {
     /// <summary>
     /// 車内に浮かぶデータメガネ。コーヒーと同じくくるくる回転＋ボブ＋光で拾える所在を示し、触れた瞬間に
-    /// 装着＝<see cref="DataVisionView"/> を一定時間だけ有効化する。効果中は着席客の頭上に「降りそう度」が
+    /// 装着＝<see cref="DataVisionView"/> をその日いっぱい有効化する（翌日リセット）。効果中は着席客の頭上に「降りそう度」が
     /// 数字で見え、席取りが先読みできる。光はコーヒー（暖色）と区別するためシアン。消費は非表示（プール）。
     /// </summary>
     public sealed class GlassesItem : MonoBehaviour
@@ -77,7 +77,7 @@ namespace TrainSurvival.Game
             {
                 view = new GameObject("DataVisionView").AddComponent<DataVisionView>();
             }
-            view.Activate(_visionDuration);
+            view.ActivateForDay(); // その日いっぱい有効（翌日リセット）
 
             gameObject.SetActive(false); // 破棄せずプールへ返す
         }

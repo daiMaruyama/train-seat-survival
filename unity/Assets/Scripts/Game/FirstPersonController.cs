@@ -28,6 +28,9 @@ namespace TrainSurvival.Game
         /// <summary>false の間は歩行を止める（例：着席中）。見回しはそのまま効く。</summary>
         public bool CanMove { get; set; } = true;
 
+        /// <summary>その日限りの移動速度倍率（モーレツ等のドーピング。乗り換えで1にリセット）。</summary>
+        public float SpeedScale { get; set; } = 1f;
+
         /// <summary>マウス感度。ポーズメニューから変更され、PlayerPrefs に保存される。</summary>
         public float LookSensitivity
         {
@@ -129,7 +132,7 @@ namespace TrainSurvival.Game
             }
             _verticalVelocity += _gravity * Time.deltaTime;
 
-            Vector3 velocity = move * _moveSpeed + Vector3.up * _verticalVelocity;
+            Vector3 velocity = move * (_moveSpeed * SpeedScale) + Vector3.up * _verticalVelocity;
             _controller.Move(velocity * Time.deltaTime);
         }
 
