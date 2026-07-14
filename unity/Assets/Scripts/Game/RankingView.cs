@@ -14,12 +14,13 @@ namespace TrainSurvival.Game
     /// </summary>
     public sealed class RankingView : MonoBehaviour
     {
-        // 深いネイビー＋生成りを本文色にして、オレンジは順位と新着だけに絞る。
-        // 全文を発光色にすると可読性が落ちるため、駅の案内サイン寄りの高コントラスト配色にする。
+        // 深いネイビー＋生成りを本文色にする。色の意味は「金＝頂点」「橙＝今回の新記録」に限定し、
+        // 上位の強調は色相ではなく輝度（金→生成り太字→青灰）で作る＝ゲーム全体のオレンジと衝突しない。
         private static readonly Color BoardBg = new Color(0.045f, 0.064f, 0.095f, 1f);
         private static readonly Color FrameGray = new Color(0.76f, 0.74f, 0.69f);
         private static readonly Color FrameEdge = new Color(0.035f, 0.048f, 0.07f, 0.78f);
-        private static readonly Color LedAmber = new Color(1f, 0.48f, 0.20f);
+        private static readonly Color LedAmber = new Color(1f, 0.48f, 0.20f);  // 「NEW（今回の記録）」専用
+        private static readonly Color LedGold = new Color(1f, 0.93f, 0.55f);   // 1位＝シャンパンゴールド
         private static readonly Color LedGreen = new Color(0.95f, 0.94f, 0.89f);
         private static readonly Color LedDim = new Color(0.62f, 0.72f, 0.81f, 1f);
         private static readonly Color LedRed = new Color(1f, 0.66f, 0.40f);
@@ -146,7 +147,7 @@ namespace TrainSurvival.Game
                 : $"● LOCAL ARCHIVE　{entries.Count:00} / 10";
             route.fontStyle = FontStyle.Bold;
 
-            Image headRule = CreateImage("HeadRule", br, LedAmber);
+            Image headRule = CreateImage("HeadRule", br, new Color(LedDim.r, LedDim.g, LedDim.b, 0.55f));
             EdgeTop(headRule.rectTransform, 112f, 4f, 32f);
 
             // 列見出し（LEDの案内行）
@@ -167,9 +168,9 @@ namespace TrainSurvival.Game
                 bool highlight = has && _highlightTicks != 0 && entries[i].ticks == _highlightTicks;
                 bool top3 = i < 3;
 
-                // 上位は暖色、通常行は青灰色のカードにして順位の階層を一目で分ける
+                // 1位は金の面、2〜3位はやや明るい青灰、以降は交互の暗い縞＝輝度の階段で序列を見せる
                 Color rowColor = i == 0
-                    ? new Color(LedAmber.r, LedAmber.g, LedAmber.b, 0.14f)
+                    ? new Color(LedGold.r, LedGold.g, LedGold.b, 0.12f)
                     : top3
                         ? new Color(0.38f, 0.52f, 0.66f, 0.11f)
                         : i % 2 == 0
@@ -194,13 +195,14 @@ namespace TrainSurvival.Game
                     _highlightStripe.transform.SetSiblingIndex(1);
                 }
 
-                Color led = highlight ? LedAmber : top3 ? LedAmber : LedGreen;
+                // 文字色：新記録＝橙（唯一のオレンジ）、1位＝金、それ以外は生成り（上位は太字で持ち上げる）
+                Color led = highlight ? LedAmber : i == 0 ? LedGold : LedGreen;
                 int size = i == 0 ? 32 : 24; // 8の倍数＝ドットが割れない
 
-                // TOP3／今回記録は左端の信号色でも判別できる
+                // TOP3／今回記録は左端の信号色でも判別できる（金＝上位、橙＝NEW）
                 if (top3 || highlight)
                 {
-                    Image marker = CreateImage("Marker", row, highlight ? LedAmber : new Color(LedAmber.r, LedAmber.g, LedAmber.b, 0.55f));
+                    Image marker = CreateImage("Marker", row, highlight ? LedAmber : new Color(LedGold.r, LedGold.g, LedGold.b, 0.6f));
                     marker.rectTransform.anchorMin = new Vector2(0f, 0.18f);
                     marker.rectTransform.anchorMax = new Vector2(0f, 0.82f);
                     marker.rectTransform.pivot = new Vector2(0f, 0.5f);
@@ -209,7 +211,7 @@ namespace TrainSurvival.Game
                 }
 
                 AddCell(row, (i + 1).ToString("00"), 0.00f, 0.09f, size, led, TextAnchor.MiddleCenter, bold: top3);
-                AddCell(row, RankTitle(i), 0.10f, 0.26f, 16, top3 ? LedAmber : LedDim, TextAnchor.MiddleLeft, bold: top3);
+                AddCell(row, RankTitle(i), 0.10f, 0.26f, 16, i == 0 ? LedGold : top3 ? LedGreen : LedDim, TextAnchor.MiddleLeft, bold: top3);
                 if (has)
                 {
                     RankingEntry e = entries[i];
@@ -228,7 +230,7 @@ namespace TrainSurvival.Game
             }
 
             // 下段の案内テロップ＋盤面内の閉じるボタン
-            Image footRule = CreateImage("FootRule", br, new Color(LedAmber.r, LedAmber.g, LedAmber.b, 0.5f));
+            Image footRule = CreateImage("FootRule", br, new Color(LedDim.r, LedDim.g, LedDim.b, 0.4f));
             EdgeTop(footRule.rectTransform, 180f + 10 * rowH + 8f, 2f, 32f);
             Text notice = FullText("Notice", br, 21, TextAnchor.MiddleLeft, LedRed, 60f);
             notice.text = "本日も定時運行の予定はありません。ご了承ください。";

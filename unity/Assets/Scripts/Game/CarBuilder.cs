@@ -206,10 +206,18 @@ namespace TrainSurvival.Game
             for (int i = 0; i < count; i++)
             {
                 float z = start + spacing * i;
-                CreateBlock($"StrapBand_{sign}_{i}", new Vector3(x, railY - 0.09f, z),
+                // 支点（レール取り付け点）を親にして、帯と輪をぶら下げる＝振り子として揺らせる
+                var pivot = new GameObject($"Strap_{sign}_{i}");
+                pivot.transform.SetParent(transform, false);
+                pivot.transform.localPosition = new Vector3(x, railY, z);
+                pivot.AddComponent<StrapSway>(); // ポーズ中・停車中も揺れ続ける（unscaled駆動）
+
+                GameObject band = CreateBlock($"StrapBand_{sign}_{i}", new Vector3(x, railY - 0.09f, z),
                     new Vector3(0.03f, 0.14f, 0.01f), StrapColor, withCollider: false);
+                band.transform.SetParent(pivot.transform, true);
                 // 輪っか＝本物と同じ穴あきリング（トーラスを手続き生成）
-                CreateStrapRing($"StrapRing_{sign}_{i}", new Vector3(x, railY - 0.20f, z));
+                GameObject ring = CreateStrapRing($"StrapRing_{sign}_{i}", new Vector3(x, railY - 0.20f, z));
+                ring.transform.SetParent(pivot.transform, true);
             }
         }
 
@@ -261,7 +269,7 @@ namespace TrainSurvival.Game
         }
 
         /// <summary>吊り革の輪。プリミティブにトーラスは無いのでメッシュを一度だけ生成して全輪で共有する。</summary>
-        private void CreateStrapRing(string ringName, Vector3 position)
+        private GameObject CreateStrapRing(string ringName, Vector3 position)
         {
             if (_strapRingMesh == null)
             {
@@ -282,6 +290,7 @@ namespace TrainSurvival.Game
             var renderer = go.AddComponent<MeshRenderer>();
             renderer.sharedMaterial = _strapRingMaterial;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
+            return go;
         }
 
         /// <summary>トーラス（ドーナツ）メッシュ生成。radius=輪の半径、tube=管の太さ。</summary>

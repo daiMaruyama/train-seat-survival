@@ -313,12 +313,15 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
+#if UNITY_EDITOR
+            // F9＝音デバッグオーバーレイ（エディタ専用。提出ビルドには入れない）
             Keyboard kb = Keyboard.current;
             if (kb != null && kb.f9Key.wasPressedThisFrame)
             {
                 DebugLogging = !DebugLogging;
                 Log(_debugLogging ? "debug overlay on" : "debug overlay off");
             }
+#endif
             UpdateTrainLoop();
             UpdateHeartbeat();
         }
@@ -649,6 +652,7 @@ namespace TrainSurvival.Game
             }
         }
 
+#if UNITY_EDITOR
         private void OnGUI()
         {
             if (!_debugLogging)
@@ -677,6 +681,7 @@ namespace TrainSurvival.Game
             }
             GUILayout.EndArea();
         }
+#endif
 
         private int ActiveSeCount()
         {

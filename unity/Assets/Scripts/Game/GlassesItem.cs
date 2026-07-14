@@ -3,13 +3,12 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 車内に浮かぶデータメガネ。コーヒーと同じくくるくる回転＋ボブ＋光で拾える所在を示し、触れると
-    /// 「かけ直し3回分」を入手（<see cref="DataVisionView.GrantCharges"/>）。右クリックで一瞬だけ装着し、
-    /// その間は席そのものが降りそう度の色で光る。光はコーヒー（暖色）と区別するためシアン。消費は非表示（プール）。
+    /// 車内に浮かぶデータメガネ。コーヒーと同じくくるくる回転＋ボブ＋光で拾える所在を示し、触れた瞬間に
+    /// <see cref="DataVisionView.Scan"/> を実行する。次の駅で降りる乗客の席だけが、元色を保って2回発光する。
+    /// 光はコーヒー（暖色）と区別するためシアン。消費後は非表示（プール）。
     /// </summary>
     public sealed class GlassesItem : MonoBehaviour
     {
-        [SerializeField, Min(1)] private int _charges = 3; // 拾ったとき補充されるかけ直し回数
         [SerializeField] private float _spinSpeed = 80f;
         [SerializeField] private float _bobAmplitude = 0.05f;
         [SerializeField] private float _bobSpeed = 2.2f;
@@ -77,7 +76,8 @@ namespace TrainSurvival.Game
             {
                 view = new GameObject("DataVisionView").AddComponent<DataVisionView>();
             }
-            view.GrantCharges(_charges); // かけ直し回数を補充（使うのは右クリック）
+            view.Scan(); // 0.2秒待って、発光間に1秒空ける2連スキャン
+            GameAudio.Instance.Play(GameAudio.Sfx.Coffee, 1.45f);
 
             gameObject.SetActive(false); // 破棄せずプールへ返す
         }

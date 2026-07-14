@@ -83,13 +83,17 @@ namespace TrainSurvival.Game
                 return;
             }
 
+            // 小休止（timeScale=0）中も車窓だけは流し続ける＝「世界は止まっても電車は走っている」演出。
+            // ゲームロジック（駅進行・席取り）は timeScale=0 のままなので有利不利は生まれない
+            float dt = PauseMenuView.IsOpen ? Time.unscaledDeltaTime : Time.deltaTime;
+
             // 後方(-z)へ流し、ループ端で前方へ戻して高さを引き直す
             foreach (Layer layer in _layers)
             {
                 foreach (Transform b in layer.Buildings)
                 {
                     Vector3 p = b.position;
-                    p.z -= layer.Speed * speed01 * Time.deltaTime;
+                    p.z -= layer.Speed * speed01 * dt;
                     if (p.z < -_loopLength * 0.5f)
                     {
                         p.z += _loopLength;

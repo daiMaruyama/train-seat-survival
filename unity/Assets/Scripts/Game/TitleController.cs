@@ -307,7 +307,7 @@ namespace TrainSurvival.Game
                 yield return new WaitForSeconds(Random.Range(6f, 12f));
                 if (!_loading)
                 {
-                    GameAudio.Instance.Play(GameAudio.Sfx.Horn, Random.Range(0.85f, 1.05f));
+                    GameAudio.Instance.Play(GameAudio.Sfx.Horn); // ピッチ固定（揺らすと不気味に聞こえる）
                 }
             }
         }

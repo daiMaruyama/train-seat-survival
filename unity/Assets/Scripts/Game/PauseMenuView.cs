@@ -26,6 +26,8 @@ namespace TrainSurvival.Game
         private CutInView _cutIn;
         private FirstPersonController _fpc;
         private GameObject _panelRoot;
+        private RectTransform _swayRoot; // クリップボードの吊り下げ支点（ポーズ中に揺らす）
+        private bool _leaving; // 退職フェード中（多重発火と再オープンを防ぐ）
 
         private void Start()
         {
@@ -43,10 +45,16 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
-            Keyboard kb = Keyboard.current;
-            if (kb == null || !kb.escapeKey.wasPressedThisFrame)
+            // 開いている間はクリップボードが画鋲を支点にゆっくり揺れる（timeScale=0でも動く＝画面が死なない）
+            if (IsOpen && _swayRoot != null)
             {
-                return;
+                _swayRoot.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.unscaledTime * 0.9f) * 0.9f);
+            }
+
+            Keyboard kb = Keyboard.current;
+            if (_leaving || kb == null || !kb.escapeKey.wasPressedThisFrame)
+            {
+                return; // 退職フェード中はESCを受け付けない（再開・再オープン事故を防ぐ）
             }
 
             if (IsOpen)
@@ -112,7 +120,26 @@ namespace TrainSurvival.Game
 
         private void GoTitle()
         {
+            // 他の遷移（リトライ・日替わり）と同じ作法：黒フェードで落としてからタイトルへ。
+            // フェード中は世界を止めたまま（音・timeScaleはロード直前に戻す）
+            if (_leaving)
+            {
+                return;
+            }
+            _leaving = true;
             IsOpen = false;
+            if (_cutIn != null)
+            {
+                _cutIn.PlaySceneFadeOut(LoadTitleScene);
+            }
+            else
+            {
+                LoadTitleScene();
+            }
+        }
+
+        private void LoadTitleScene()
+        {
             Time.timeScale = 1f;
             AudioListener.pause = false;
             RunStartContext.RequestTitleFadeInTransition();
@@ -136,17 +163,25 @@ namespace TrainSurvival.Game
             panelRootRect.SetParent(root, false);
             Stretch(panelRootRect);
 
-            Image dim = CreateImage("Dim", panelRootRect, new Color(0f, 0f, 0f, 0.66f));
+            Image dim = CreateImage("Dim", panelRootRect, new Color(0f, 0f, 0f, 0.5f)); // 背後の車内が見える濃さに留める
             Stretch(dim.rectTransform);
             dim.raycastTarget = true; // 背後のゲームUIを触らせない
 
+            // 揺れの支点（クリップボード上端＝画鋲の位置）。ポーズ中はここを軸にゆらゆら揺れる
+            var swayGo = new GameObject("BoardSway", typeof(RectTransform));
+            _swayRoot = swayGo.GetComponent<RectTransform>();
+            _swayRoot.SetParent(panelRootRect, false);
+            _swayRoot.anchorMin = _swayRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            _swayRoot.anchoredPosition = new Vector2(0f, 400f);
+            _swayRoot.sizeDelta = Vector2.zero;
+
             // クリップボード（台座の板・ハード影）
-            Image shadow = CreateImage("BoardShadow", panelRootRect, new Color(0f, 0f, 0f, 0.55f));
-            Center(shadow.rectTransform, new Vector2(10f, -10f), new Vector2(620f, 800f));
-            Image board = CreateImage("Board", panelRootRect, BoardBg);
+            Image shadow = CreateImage("BoardShadow", _swayRoot, new Color(0f, 0f, 0f, 0.55f));
+            Center(shadow.rectTransform, new Vector2(10f, -410f), new Vector2(620f, 800f));
+            Image board = CreateImage("Board", _swayRoot, BoardBg);
             board.raycastTarget = true;
             RectTransform br = board.rectTransform;
-            Center(br, Vector2.zero, new Vector2(620f, 800f));
+            Center(br, new Vector2(0f, -400f), new Vector2(620f, 800f));
             UiKit.Panelize(board, 8, forceProcedural: true);
             var boardEdge = board.gameObject.AddComponent<Outline>();
             boardEdge.effectColor = new Color(1f, 1f, 1f, 0.08f);
@@ -165,19 +200,51 @@ namespace TrainSurvival.Game
             paperShadow.effectDistance = new Vector2(4f, -4f);
             UiKit.AddPaperGrain(pr);
 
-            // クリップ（紙を留める金具）
-            Image clipBase = CreateImage("ClipBase", br, new Color(0.42f, 0.45f, 0.5f));
+            // クリップボードの留め金具：山型の押さえ＋横長の台座＋紙を噛む爪の3ピースで
+            // 「書類がクリップに挟まっている」と一目で分かる形にする（紙の上端に少し重ねる）
+            Color metal = new Color(0.62f, 0.66f, 0.72f);
+            Color metalDark = new Color(0.36f, 0.40f, 0.46f);
+
+            // 爪（紙を上から噛んでいる部分。紙より手前＝後で描かれるよう紙の後に生成）
+            Image clipTongue = CreateImage("ClipTongue", br, metalDark);
+            clipTongue.rectTransform.anchorMin = clipTongue.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            clipTongue.rectTransform.pivot = new Vector2(0.5f, 1f);
+            clipTongue.rectTransform.anchoredPosition = new Vector2(0f, -40f);
+            clipTongue.rectTransform.sizeDelta = new Vector2(96f, 22f);
+            UiKit.Panelize(clipTongue, 6, forceProcedural: true);
+
+            // 台座（横長の金属プレート）
+            Image clipBase = CreateImage("ClipBase", br, metal);
             clipBase.rectTransform.anchorMin = clipBase.rectTransform.anchorMax = new Vector2(0.5f, 1f);
             clipBase.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            clipBase.rectTransform.anchoredPosition = new Vector2(0f, -34f);
-            clipBase.rectTransform.sizeDelta = new Vector2(150f, 26f);
-            UiKit.Panelize(clipBase, 8, forceProcedural: true);
-            Image clipHole = CreateImage("ClipHole", clipBase.rectTransform, BoardBg);
+            clipBase.rectTransform.anchoredPosition = new Vector2(0f, -32f);
+            clipBase.rectTransform.sizeDelta = new Vector2(170f, 24f);
+            UiKit.Panelize(clipBase, 9, forceProcedural: true);
+            var baseEdge = clipBase.gameObject.AddComponent<Outline>();
+            baseEdge.effectColor = new Color(0f, 0f, 0f, 0.35f);
+            baseEdge.effectDistance = new Vector2(1.2f, -1.2f);
+
+            // 山型の押さえ（クリップの記号。ドーム＋中央の穴）
+            Image clipHump = CreateImage("ClipHump", br, metal);
+            clipHump.rectTransform.anchorMin = clipHump.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            clipHump.rectTransform.pivot = new Vector2(0.5f, 0f);
+            clipHump.rectTransform.anchoredPosition = new Vector2(0f, -34f);
+            clipHump.rectTransform.sizeDelta = new Vector2(62f, 30f);
+            UiKit.Panelize(clipHump, 15, forceProcedural: true);
+            Image clipHole = CreateImage("ClipHole", clipHump.rectTransform, BoardBg);
             clipHole.rectTransform.anchorMin = clipHole.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
             clipHole.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-            clipHole.rectTransform.anchoredPosition = new Vector2(0f, 2f);
-            clipHole.rectTransform.sizeDelta = new Vector2(56f, 8f);
-            UiKit.Panelize(clipHole, 4, forceProcedural: true);
+            clipHole.rectTransform.anchoredPosition = new Vector2(0f, 3f);
+            clipHole.rectTransform.sizeDelta = new Vector2(20f, 10f);
+            UiKit.Panelize(clipHole, 5, forceProcedural: true);
+
+            // 金属のツヤ（台座上辺のハイライト1本）
+            Image clipShine = CreateImage("ClipShine", clipBase.rectTransform, new Color(1f, 1f, 1f, 0.35f));
+            clipShine.rectTransform.anchorMin = new Vector2(0.06f, 1f);
+            clipShine.rectTransform.anchorMax = new Vector2(0.94f, 1f);
+            clipShine.rectTransform.pivot = new Vector2(0.5f, 1f);
+            clipShine.rectTransform.anchoredPosition = new Vector2(0f, -3f);
+            clipShine.rectTransform.sizeDelta = new Vector2(0f, 2.5f);
 
             // 見出し・宛名
             Text head = CreateText("Head", pr, 32, TextAnchor.MiddleCenter, Ink);

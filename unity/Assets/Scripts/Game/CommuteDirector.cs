@@ -170,15 +170,13 @@ namespace TrainSurvival.Game
                 return; // 倒れて停止中／日替わり演出中は駅を進めない
             }
 
-            // 走行→減速→停車（ここで乗降）→加速、のサイクル。Space はデバッグ用の早送り。
-            Keyboard kb = Keyboard.current;
-            bool skip = kb != null && kb.spaceKey.wasPressedThisFrame;
+            // 走行→減速→停車（ここで乗降）→加速、のサイクル
             if (!_atStation)
             {
                 _trainSpeed = Mathf.MoveTowards(_trainSpeed, 1f, Time.deltaTime / _accelTime); // 発車加速
                 MaybePlayHorn();
                 _stationTimer -= Time.deltaTime;
-                if (_stationTimer <= 0f || skip)
+                if (_stationTimer <= 0f)
                 {
                     StartCoroutine(StationStopRoutine());
                 }
@@ -265,7 +263,7 @@ namespace TrainSurvival.Game
             }
 
             ApplyAudioTuning();
-            GameAudio.Instance.Play(GameAudio.Sfx.Horn, Random.Range(0.92f, 1.08f));
+            GameAudio.Instance.Play(GameAudio.Sfx.Horn); // ピッチ固定（揺らすと不気味に聞こえる）
             ResetHornTimer();
         }
 
@@ -362,10 +360,10 @@ namespace TrainSurvival.Game
             _leg++;
             ClearCar();
 
-            // データメガネの装着中効果は翌日へ持ち越さない（かけ直し回数は残る）
+            // 日を跨いだ時点でデータメガネの発光が残っていれば消す
             if (DataVisionView.Instance != null)
             {
-                DataVisionView.Instance.Deactivate();
+                DataVisionView.Instance.ResetForNewDay();
             }
 
             _playerSeat = -1;

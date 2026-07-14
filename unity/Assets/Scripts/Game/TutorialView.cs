@@ -126,11 +126,11 @@ namespace TrainSurvival.Game
             // 心得（本文）
             Line(pr, 118f, "一、", "満員電車で座席を確保することが、あなたの唯一の業務である。");
             Line(pr, 170f, "二、", "移動は W A S D、周囲の確認はマウス。");
-            Line(pr, 222f, "三、", "空席に照準を合わせ、E か左クリックで着席せよ。早い者勝ちである。");
+            Line(pr, 222f, "三、", "空席に照準を合わせ、E か左クリックで座れ。早い者勝ちだ。");
             Line(pr, 274f, "四、", "座れた日は無事出勤＝体力が回復し、翌日に進む。");
             Line(pr, 326f, "五、", "立ちっぱなしは過労で倒れる。倒れたら年収査定のうえ処分する。");
             Line(pr, 378f, "六、", "降りる客の近くに立て。席は空いた瞬間に奪われる。");
-            Line(pr, 430f, "七、", "コーヒー（橙）は回復。メガネ（青）は右クリックで降車予測。赤い靴は俊足。");
+            Line(pr, 430f, "七、", "コーヒーは回復。メガネは次で空く席を照らす。赤い靴は俊足。");
             Line(pr, 482f, "八、", "日を追うごとに消耗は激しくなる。長くは続かない。");
 
             Rule(pr, 546f, 3f, AccentOrange);
@@ -178,6 +178,10 @@ namespace TrainSurvival.Game
 
             Text t = CreateText("Body", paper, 25, TextAnchor.MiddleLeft, Ink);
             t.text = body;
+            t.horizontalOverflow = HorizontalWrapMode.Wrap;
+            t.resizeTextForBestFit = true; // 紙幅に収まらない文言は自動で縮む＝はみ出し防止の保険
+            t.resizeTextMaxSize = 25;
+            t.resizeTextMinSize = 18;
             RectTransform rt = t.rectTransform;
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(1f, 1f);

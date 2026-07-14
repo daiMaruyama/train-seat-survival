@@ -42,8 +42,6 @@ namespace TrainSurvival.Game
         private CommuteDirector _director;
         private CarBuilder _car;
         private readonly List<GameObject> _all = new();
-        private readonly HashSet<GameObject> _oncePerRun = new(); // ラン中1回きり（消費後は日替わりでも復活しない）
-        private bool _placedOnce;
         private float _zMin;
         private float _zMax;
         private int _lastLeg = -1;
@@ -153,10 +151,6 @@ namespace TrainSurvival.Game
 
                 root.SetActive(false);
                 _all.Add(root);
-                if (pool.kind == ItemKind.Shoes)
-                {
-                    _oncePerRun.Add(root); // 強アイテムはラン中1足だけ
-                }
             }
         }
 
@@ -252,18 +246,10 @@ namespace TrainSurvival.Game
 
         private void RepositionAll()
         {
-            bool firstPlacement = !_placedOnce;
-            _placedOnce = true;
-
             var placed = new List<Vector3>();
             foreach (GameObject item in _all)
             {
                 if (item == null)
-                {
-                    continue;
-                }
-                // ラン1回きりのアイテムは、消費済み（非表示）なら日替わりでも復活させない
-                if (!firstPlacement && _oncePerRun.Contains(item) && !item.activeSelf)
                 {
                     continue;
                 }
