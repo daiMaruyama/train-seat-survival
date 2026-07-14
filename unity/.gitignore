@@ -144,3 +144,7 @@ InitTestScene*.unity*
 /[Aa]ssets/kenney_ui-pack.meta
 /[Aa]ssets/Resources/UiSprites/
 /[Aa]ssets/Resources/UiSprites.meta
+
+# 靴の外部アセット（ダッシュ靴の見た目。導入方法はREADME参照）
+/[Aa]ssets/npc_casual_set_00/
+/[Aa]ssets/npc_casual_set_00.meta

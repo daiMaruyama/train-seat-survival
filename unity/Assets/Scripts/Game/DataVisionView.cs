@@ -1,30 +1,34 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// データメガネの視界（席スキャン）。有効な間だけ、着席客が座っている「席」から色付きのビームと
-    /// 足元パッドを灯す。緑＝次の駅で降りる（＝すぐ空く狙い目）／黄→橙→赤＝当分乗る。降りそうな席ほど
-    /// 明るく高く脈打ち、当分空かない席は淡く沈むので、狙うべき席が一目で浮かび上がる。乗客本体には
-    /// 触れないので不気味さが出ない。隠し情報 <see cref="Core.Passenger.DestinationStation"/> を
-    /// <see cref="CommuteDirector.TryReadSeatIntel"/> 経由で覗くだけの描画専用ビュー（ルールは持たない）。
+    /// データメガネの視界。メガネを拾うと「かけ直し3回分」のチャージを持ち、右クリックで一瞬だけ装着。
+    /// 効いている間は各席"そのもの"が降りそう度の色で光る（緑＝もうすぐ空く 〜 赤＝当分空かない）。
+    /// 色付けは <see cref="SeatMarker"/> のインテル層に委譲し、ここは入力・チャージ・駆動だけを持つ。
+    /// 隠し情報 <see cref="Core.Passenger.DestinationStation"/> は
+    /// <see cref="CommuteDirector.TryReadSeatIntel"/> 経由でのみ覗く（描画専用・ルールは持たない）。
     /// </summary>
     public sealed class DataVisionView : MonoBehaviour
     {
         public static DataVisionView Instance { get; private set; }
 
+        [SerializeField] private float _scanDuration = 6f; // 1回の装着時間（一瞬だけ視える）
+
         private CommuteDirector _director;
-        private Transform[] _slots;
-        private Transform[] _beams;
-        private Material[] _beamMats;
-        private Material[] _padMats;
+        private CarBuilder _car;
         private float _activeUntil;
+        private bool _wasActive; // 切れた瞬間に席の色を戻すため
 
         /// <summary>いまデータ視界が有効か。</summary>
         public bool IsActive => Time.unscaledTime < _activeUntil;
 
         /// <summary>残り有効秒数（HUD 表示用）。</summary>
         public float Remaining => Mathf.Max(0f, _activeUntil - Time.unscaledTime);
+
+        /// <summary>残りのかけ直し回数（メガネを拾うと3回に補充）。</summary>
+        public int Charges { get; private set; }
 
         private void Awake()
         {
@@ -39,22 +43,34 @@ namespace TrainSurvival.Game
             }
         }
 
-        /// <summary>メガネを拾ったら一定時間だけデータ視界を点ける（延長は累積せず上書き）。</summary>
-        public void Activate(float duration)
+        /// <summary>メガネを拾った：かけ直し回数を補充する（貯め込みはできない＝上書き）。</summary>
+        public void GrantCharges(int count)
         {
-            _activeUntil = Time.unscaledTime + Mathf.Max(0f, duration);
+            Charges = Mathf.Max(Charges, count);
         }
 
-        /// <summary>その日いっぱい有効化（翌日への切り替え＝Transfer の Deactivate で切れる）。</summary>
-        public void ActivateForDay()
-        {
-            _activeUntil = float.PositiveInfinity;
-        }
-
-        /// <summary>効果を即オフにする（翌日への切り替えで持ち越さないため）。</summary>
+        /// <summary>効果を即オフにする（翌日への切り替えで持ち越さないため。チャージは残る）。</summary>
         public void Deactivate()
         {
             _activeUntil = 0f;
+        }
+
+        private void Update()
+        {
+            // 右クリック＝メガネをかける（1回消費）。ポーズ・各種パネル・停止中は受け付けない
+            if (Charges <= 0 || IsActive || Time.timeScale <= 0f
+                || PauseMenuView.IsOpen || TutorialView.IsOpen || RankingView.IsOpen)
+            {
+                return;
+            }
+            Mouse mouse = Mouse.current;
+            if (mouse == null || !mouse.rightButton.wasPressedThisFrame)
+            {
+                return;
+            }
+            Charges--;
+            _activeUntil = Time.unscaledTime + Mathf.Max(0f, _scanDuration);
+            GameAudio.Instance.Play(GameAudio.Sfx.Coffee, 1.45f); // かける音（軽いキュッ）
         }
 
         private void LateUpdate()
@@ -63,105 +79,53 @@ namespace TrainSurvival.Game
             {
                 _director = FindFirstObjectByType<CommuteDirector>();
             }
-            if (_director == null || _director.SeatCount == 0)
+            if (_car == null)
+            {
+                _car = FindFirstObjectByType<CarBuilder>();
+            }
+            if (_director == null || _car == null || _director.SeatCount == 0)
             {
                 return;
             }
-            if (_slots == null)
-            {
-                BuildPool(_director.SeatCount);
-            }
 
-            bool on = IsActive;
-            Camera cam = Camera.main;
-            float t = Time.unscaledTime;
-
-            for (int seat = 0; seat < _slots.Length; seat++)
+            if (!IsActive)
             {
-                bool readable = _director.TryReadSeatIntel(seat, out _, out int stations);
-                bool show = on && cam != null && readable;
-                if (!show)
+                if (_wasActive)
                 {
-                    if (_slots[seat].gameObject.activeSelf)
-                    {
-                        _slots[seat].gameObject.SetActive(false);
-                    }
+                    ClearIntel(); // 切れた瞬間に一度だけ席の色を戻す
+                }
+                _wasActive = false;
+                return;
+            }
+            _wasActive = true;
+
+            var markers = _car.Markers;
+            for (int seat = 0; seat < markers.Count; seat++)
+            {
+                if (markers[seat] == null)
+                {
                     continue;
                 }
-
-                Transform slot = _slots[seat];
-                if (!slot.gameObject.activeSelf)
+                if (_director.TryReadSeatIntel(seat, out _, out int stations))
                 {
-                    slot.gameObject.SetActive(true);
+                    markers[seat].SetIntel(true, UrgencyColor(stations));
                 }
-                // 席の足元に立て、カメラへ正対させる（縦ビーム）
-                slot.SetPositionAndRotation(_director.GetSeat(seat).Position, cam.transform.rotation);
-
-                // 降りそう度：0=次の駅で降りる … 大きいほど当分乗る
-                float urgency = Mathf.Clamp01(1f - stations / 4f); // 1=すぐ空く, 0=当分
-                Color c = UrgencyColor(stations);
-
-                // 降りそうな席ほど眩しく脈動、当分空かない席は淡く沈める＝狙い目が浮かぶ
-                float strength = Mathf.Lerp(0.14f, 1f, urgency);
-                float pulse = 1f + Mathf.Sin(t * 3.5f + seat) * 0.14f * urgency;
-
-                SetGlow(_beamMats[seat], c * (strength * pulse));
-                SetGlow(_padMats[seat], c * (strength * 1.1f * pulse));
-
-                // すぐ空く席ほどビームを高く（当分は低く）
-                float height = 0.55f + 0.55f * urgency;
-                _beams[seat].localScale = new Vector3(0.42f, 1.9f * height, 1f);
+                else
+                {
+                    markers[seat].SetIntel(false, Color.clear); // 空席・プレイヤー席は通常表示のまま
+                }
             }
         }
 
-        private void BuildPool(int count)
+        private void ClearIntel()
         {
-            _slots = new Transform[count];
-            _beams = new Transform[count];
-            _beamMats = new Material[count];
-            _padMats = new Material[count];
-
-            Texture2D radial = ItemBeacon.RadialTexture();
-            for (int i = 0; i < count; i++)
+            var markers = _car.Markers;
+            for (int seat = 0; seat < markers.Count; seat++)
             {
-                var root = new GameObject($"SeatIntel_{i}");
-                root.transform.SetParent(transform, false);
-                root.SetActive(false);
-
-                // 席から立ち上がる縦ビーム（人の頭より上まで届き、着席中でも視認できる）
-                _beams[i] = MakeGlow("Beam", root.transform, radial,
-                    localPos: new Vector3(0f, 1.0f, 0.02f), size: new Vector2(0.42f, 1.9f), out _beamMats[i]);
-
-                // クッション付近の足元パッド（席そのものを指す明るい芯）
-                MakeGlow("Pad", root.transform, radial,
-                    localPos: new Vector3(0f, 0.45f, 0f), size: new Vector2(0.62f, 0.4f), out _padMats[i]);
-
-                _slots[i] = root.transform;
-            }
-        }
-
-        private static Transform MakeGlow(string name, Transform parent, Texture2D radial, Vector3 localPos, Vector2 size, out Material mat)
-        {
-            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            go.name = name;
-            Destroy(go.GetComponent<Collider>());
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = localPos;
-            go.transform.localScale = new Vector3(size.x, size.y, 1f);
-
-            var renderer = go.GetComponent<Renderer>();
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            mat = ItemBeacon.AdditiveUnlit(Color.white, radial);
-            renderer.sharedMaterial = mat;
-            return go.transform;
-        }
-
-        private static void SetGlow(Material mat, Color color)
-        {
-            mat.color = color;
-            if (mat.HasProperty("_BaseColor"))
-            {
-                mat.SetColor("_BaseColor", color);
+                if (markers[seat] != null)
+                {
+                    markers[seat].SetIntel(false, Color.clear);
+                }
             }
         }
 

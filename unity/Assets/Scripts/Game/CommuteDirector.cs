@@ -362,7 +362,7 @@ namespace TrainSurvival.Game
             _leg++;
             ClearCar();
 
-            // データメガネの効果は翌日へ持ち越さない
+            // データメガネの装着中効果は翌日へ持ち越さない（かけ直し回数は残る）
             if (DataVisionView.Instance != null)
             {
                 DataVisionView.Instance.Deactivate();
@@ -394,7 +394,7 @@ namespace TrainSurvival.Game
             var fpc = _player.GetComponent<FirstPersonController>();
             if (fpc != null)
             {
-                fpc.SpeedScale = 1f; // モーレツの加速も翌日リセット
+                fpc.SpeedScale = 1f; // ダッシュ靴の加速も翌日リセット
             }
         }
 

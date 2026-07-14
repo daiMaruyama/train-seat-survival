@@ -5,15 +5,15 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 車内アイテム（コーヒー＝回復／データメガネ＝情報）をプールで管理する生成器。
-    /// ・prefab・個数・大きさは Inspector からシリアライズして差し替え可能（コーヒーは初期4つ等）
+    /// 車内アイテム（コーヒー＝回復／データメガネ＝情報／ダッシュ靴＝加速）をプールで管理する生成器。
+    /// ・prefab・個数・大きさは Inspector からシリアライズして差し替え可能
     /// ・毎回作り直さずプールを使い回し、配置だけ「プレイヤーが取れる通路上」でランダム化（高さは固定）
     /// ・消費されたアイテムは非表示になり、日替わり（Leg 更新）で位置を撒き直して再表示＝それ以上増えない
     /// モデルの寸法はバウンズから自動正規化し、当たり判定と拾い挙動は生成時に付与する。
     /// </summary>
     public sealed class ItemSpawner : MonoBehaviour
     {
-        public enum ItemKind { Coffee, Glasses, EnergyDrink, Moretsu }
+        public enum ItemKind { Coffee, Glasses, Shoes }
 
         [System.Serializable]
         public sealed class Pool
@@ -26,20 +26,21 @@ namespace TrainSurvival.Game
             public ItemKind kind = ItemKind.Coffee;
         }
 
-        [Header("プール（prefab をアサインしてね。エナドリ/モーレツは未設定ならプリミティブで代用）")]
-        [SerializeField] private Pool _coffee = new() { label = "Coffee", count = 4, targetSize = 0.26f, kind = ItemKind.Coffee };
+        [Header("プール（prefab をアサインしてね。靴は未設定ならプリミティブで代用）")]
+        [SerializeField] private Pool _coffee = new() { label = "Coffee", count = 2, targetSize = 0.26f, kind = ItemKind.Coffee };
         [SerializeField] private Pool _glasses = new() { label = "Glasses", count = 1, targetSize = 0.34f, kind = ItemKind.Glasses };
-        [SerializeField] private Pool _energyDrink = new() { label = "EnergyDrink", count = 1, targetSize = 0.24f, kind = ItemKind.EnergyDrink };
-        [SerializeField] private Pool _moretsu = new() { label = "Moretsu", count = 1, targetSize = 0.20f, kind = ItemKind.Moretsu };
+        [SerializeField] private Pool _shoes = new() { label = "DashShoes", count = 1, targetSize = 0.30f, kind = ItemKind.Shoes };
 
         [Header("配置（プレイヤーが取れる通路上・高さ固定）")]
         [SerializeField] private float _floatHeight = 1.05f;             // 浮遊高さ（胸元＝視界に入る）
         [SerializeField] private Vector2 _aisleX = new(-0.4f, 0.4f);     // 通路の左右の振れ幅
         [SerializeField] private float _endMargin = 1.4f;               // 車端から内側へ空ける距離
+        [SerializeField] private float _doorZJitter = 0.28f;            // ドア中央への重なりを避ける前後幅
         [SerializeField] private float _minSpacing = 1.1f;              // アイテム同士の最小間隔
         [SerializeField] private bool _respawnEachDay = true;           // 日替わりで撒き直す
 
         private CommuteDirector _director;
+        private CarBuilder _car;
         private readonly List<GameObject> _all = new();
         private readonly HashSet<GameObject> _oncePerRun = new(); // ラン中1回きり（消費後は日替わりでも復活しない）
         private bool _placedOnce;
@@ -56,18 +57,19 @@ namespace TrainSurvival.Game
         private IEnumerator BuildWhenReady()
         {
             _director = FindFirstObjectByType<CommuteDirector>();
+            _car = FindFirstObjectByType<CarBuilder>();
             // 車両（座席）が組み上がるまで待つ
             while (_director == null || _director.SeatCount == 0)
             {
                 _director = _director != null ? _director : FindFirstObjectByType<CommuteDirector>();
+                _car = _car != null ? _car : FindFirstObjectByType<CarBuilder>();
                 yield return null;
             }
 
             ComputeAisleRange();
             BuildPool(_coffee);
             BuildPool(_glasses);
-            BuildPool(_energyDrink);
-            BuildPool(_moretsu);
+            BuildPool(_shoes);
             RepositionAll();
             _lastLeg = _director.Leg;
             _ready = true;
@@ -109,7 +111,7 @@ namespace TrainSurvival.Game
             {
                 return;
             }
-            bool canFallback = pool.kind == ItemKind.EnergyDrink || pool.kind == ItemKind.Moretsu;
+            bool canFallback = pool.kind == ItemKind.Shoes;
             if (pool.prefab == null && !canFallback)
             {
                 Debug.LogWarning($"ItemSpawner: '{pool.label}' の prefab が未設定のためスキップします。");
@@ -125,6 +127,8 @@ namespace TrainSurvival.Game
                 if (pool.prefab != null)
                 {
                     model = Instantiate(pool.prefab, root.transform);
+                    FlattenSkinnedMeshes(model); // NPC衣装系アセット対策（スキンのままだとバウンズが身長分になる）
+                    KeepOnlyHighestLod(model);   // LODGroupを持たない小物化なので、放っておくと全LODが重なって描画される
                     ItemBeacon.EnsureUrpMaterials(model); // 真っピンク（マテリアル欠損）を防ぐ
                 }
                 else
@@ -143,66 +147,76 @@ namespace TrainSurvival.Game
                 switch (pool.kind)
                 {
                     case ItemKind.Coffee: root.AddComponent<CoffeeCupItem>(); break;
-                    case ItemKind.EnergyDrink: root.AddComponent<EnergyDrinkItem>(); break;
-                    case ItemKind.Moretsu: root.AddComponent<MoretsuDrinkItem>(); break;
+                    case ItemKind.Shoes: root.AddComponent<DashShoesItem>(); break;
                     default: root.AddComponent<GlassesItem>(); break;
                 }
 
                 root.SetActive(false);
                 _all.Add(root);
-                if (pool.kind == ItemKind.EnergyDrink || pool.kind == ItemKind.Moretsu)
+                if (pool.kind == ItemKind.Shoes)
                 {
-                    _oncePerRun.Add(root); // 強アイテムはラン中1本だけ
+                    _oncePerRun.Add(root); // 強アイテムはラン中1足だけ
                 }
             }
         }
 
-        /// <summary>prefab 未設定アイテムのプリミティブ見た目（缶／小瓶）。コライダーは付けない。</summary>
+        /// <summary>
+        /// スキンメッシュを素の MeshFilter+MeshRenderer へ差し替える。NPC衣装用アセット（靴など）は
+        /// 人体リグにスキンされていてバウンズが身長サイズになるため、そのままだと正規化（寸法合わせ）が狂う。
+        /// バインドポーズのメッシュを直接使えば小物として正しい寸法で扱える。
+        /// </summary>
+        private static void FlattenSkinnedMeshes(GameObject model)
+        {
+            foreach (SkinnedMeshRenderer skinned in model.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                GameObject go = skinned.gameObject;
+                Mesh mesh = skinned.sharedMesh;
+                Material[] materials = skinned.sharedMaterials;
+                DestroyImmediate(skinned); // 直後にバウンズを測るので即時破棄
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                go.AddComponent<MeshRenderer>().sharedMaterials = materials;
+            }
+        }
+
+        /// <summary>
+        /// 「〜_lod1」以降のレンダラーを非表示にして最高品質（lod0）だけ残す。
+        /// LOD付きFBXをただ Instantiate すると全段が同時に描画され、無駄とZファイトの元になる。
+        /// </summary>
+        private static void KeepOnlyHighestLod(GameObject model)
+        {
+            foreach (MeshRenderer renderer in model.GetComponentsInChildren<MeshRenderer>())
+            {
+                string n = renderer.name.ToLowerInvariant();
+                int at = n.LastIndexOf("_lod", System.StringComparison.Ordinal);
+                if (at >= 0 && at + 4 < n.Length && char.IsDigit(n[at + 4]) && n[at + 4] != '0')
+                {
+                    renderer.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        /// <summary>prefab 未設定アイテムのプリミティブ見た目（靴っぽいL字ブロック）。コライダーは付けない。</summary>
         private static GameObject BuildFallbackModel(ItemKind kind, Transform parent)
         {
             var model = new GameObject("Visual");
             model.transform.SetParent(parent, false);
 
-            if (kind == ItemKind.EnergyDrink)
-            {
-                // 金の缶（円柱）＋銀のプルタブ面
-                GameObject can = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                Object.Destroy(can.GetComponent<Collider>());
-                can.transform.SetParent(model.transform, false);
-                can.transform.localScale = new Vector3(0.5f, 0.62f, 0.5f);
-                var m = RuntimeMaterials.Lit();
-                m.color = new Color(0.95f, 0.78f, 0.22f);
-                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", new Color(0.95f, 0.78f, 0.22f));
-                if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0.75f);
-                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.7f);
-                can.GetComponent<Renderer>().sharedMaterial = m;
-            }
-            else
-            {
-                // 茶褐色の小瓶（カプセル）＋金のキャップ
-                GameObject bottle = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                Object.Destroy(bottle.GetComponent<Collider>());
-                bottle.transform.SetParent(model.transform, false);
-                bottle.transform.localScale = new Vector3(0.45f, 0.5f, 0.45f);
-                var m = RuntimeMaterials.Lit();
-                var brown = new Color(0.42f, 0.2f, 0.1f);
-                m.color = brown;
-                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", brown);
-                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.65f);
-                bottle.GetComponent<Renderer>().sharedMaterial = m;
+            // 甲＋つま先の2ブロックで「靴」を象る（本番Prefab未設定時だけ使う簡易表示）
+            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Object.Destroy(body.GetComponent<Collider>());
+            body.transform.SetParent(model.transform, false);
+            body.transform.localPosition = new Vector3(0f, 0.14f, -0.1f);
+            body.transform.localScale = new Vector3(0.3f, 0.28f, 0.42f);
 
-                GameObject cap = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                Object.Destroy(cap.GetComponent<Collider>());
-                cap.transform.SetParent(model.transform, false);
-                cap.transform.localPosition = new Vector3(0f, 0.52f, 0f);
-                cap.transform.localScale = new Vector3(0.22f, 0.1f, 0.22f);
-                var cm = RuntimeMaterials.Lit();
-                var gold = new Color(0.9f, 0.75f, 0.3f);
-                cm.color = gold;
-                if (cm.HasProperty("_BaseColor")) cm.SetColor("_BaseColor", gold);
-                if (cm.HasProperty("_Metallic")) cm.SetFloat("_Metallic", 0.7f);
-                cap.GetComponent<Renderer>().sharedMaterial = cm;
-            }
+            GameObject toe = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Object.Destroy(toe.GetComponent<Collider>());
+            toe.transform.SetParent(model.transform, false);
+            toe.transform.localPosition = new Vector3(0f, 0.06f, 0.22f);
+            toe.transform.localScale = new Vector3(0.3f, 0.12f, 0.35f);
+
+            var m = RuntimeMaterials.Lit();
+            body.GetComponent<Renderer>().sharedMaterial = m;
+            toe.GetComponent<Renderer>().sharedMaterial = m;
             return model;
         }
 
@@ -253,15 +267,20 @@ namespace TrainSurvival.Game
                 {
                     continue;
                 }
-                Vector3 pos = PickReachableSpot(placed);
+                // 偶数番はドア前、奇数番は通路へ。どちらも中央通路内・同じ高さに限定する。
+                bool preferDoor = placed.Count % 2 == 0;
+                Vector3 pos = PickReachableSpot(placed, preferDoor);
                 placed.Add(pos);
+                // Activeのまま位置だけ変えると各アイテムが保持するボブ基準座標が更新されない。
+                // 必ず再Enableして、全種類を同じ高さ・新しい位置から動かす。
+                item.SetActive(false);
                 item.transform.localPosition = pos;
                 item.SetActive(true); // OnEnable で消費フラグ・基準位置がリセットされる
             }
         }
 
-        /// <summary>通路上・高さ固定で、既存アイテムと近すぎない一点を選ぶ（数回の棄却サンプリング）。</summary>
-        private Vector3 PickReachableSpot(List<Vector3> placed)
+        /// <summary>ドア前または通路上から、高さ固定で既存アイテムと近すぎない一点を選ぶ。</summary>
+        private Vector3 PickReachableSpot(List<Vector3> placed, bool preferDoor)
         {
             float zLo = _zMin + _endMargin;
             float zHi = _zMax - _endMargin;
@@ -271,10 +290,12 @@ namespace TrainSurvival.Game
                 zLo = zHi = mid;
             }
 
-            Vector3 best = new Vector3(Random.Range(_aisleX.x, _aisleX.y), _floatHeight, Random.Range(zLo, zHi));
+            Vector3 best = Candidate(preferDoor, zLo, zHi);
             for (int attempt = 0; attempt < 20; attempt++)
             {
-                var candidate = new Vector3(Random.Range(_aisleX.x, _aisleX.y), _floatHeight, Random.Range(zLo, zHi));
+                // ドア前が混んでいたら後半は通路へ逃がし、重なりを作らない。
+                bool useDoor = preferDoor && attempt < 10;
+                Vector3 candidate = Candidate(useDoor, zLo, zHi);
                 bool ok = true;
                 foreach (Vector3 p in placed)
                 {
@@ -291,6 +312,21 @@ namespace TrainSurvival.Game
                 best = candidate;
             }
             return best;
+        }
+
+        private Vector3 Candidate(bool useDoor, float zLo, float zHi)
+        {
+            float z;
+            if (useDoor && _car != null && _car.Doors.Count > 0)
+            {
+                Vector3 door = _car.Doors[Random.Range(0, _car.Doors.Count)];
+                z = Mathf.Clamp(door.z + Random.Range(-_doorZJitter, _doorZJitter), zLo, zHi);
+            }
+            else
+            {
+                z = Random.Range(zLo, zHi);
+            }
+            return new Vector3(Random.Range(_aisleX.x, _aisleX.y), _floatHeight, z);
         }
     }
 }

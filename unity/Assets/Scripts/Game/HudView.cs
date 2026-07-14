@@ -41,6 +41,7 @@ namespace TrainSurvival.Game
         private Text _staminaLabel;
         private Text _prompt;
         private GameObject _hudCanvas;
+        private GameObject _glassesLegend; // メガネの操作ヒント（チャージがある時だけ表示）
 
         // ゲージ手触り用の内部状態
         private float _shown;      // 表示中の正規化値（実値へ追従）
@@ -82,16 +83,34 @@ namespace TrainSurvival.Game
                 string status = _director.IsEndOfLine ? "終点"
                               : _director.IsAtStation ? "停車中"
                               : $"次の駅まで {_director.SecondsToNextStation:0}s";
-                // 効いているバフを付記（モーレツ＝加速／メガネ＝降車予測）
+                // 効いているバフを付記（ダッシュ靴＝加速／メガネ＝降車予測。残回数も見せる）
                 if (_fpc != null && _fpc.SpeedScale > 1.01f)
                 {
-                    status += "　◎モーレツ";
+                    status += "　◎ダッシュ";
                 }
-                if (DataVisionView.Instance != null && DataVisionView.Instance.IsActive)
+                DataVisionView vision = DataVisionView.Instance;
+                if (vision != null)
                 {
-                    status += "　◎メガネ";
+                    if (vision.IsActive)
+                    {
+                        status += $"　◎メガネ {vision.Remaining:0}s";
+                    }
+                    else if (vision.Charges > 0)
+                    {
+                        status += $"　メガネ×{vision.Charges}";
+                    }
                 }
                 _statusText.text = status;
+
+                // メガネの操作ヒントは、かけ直しが残っているときだけレジェンドに出す
+                if (_glassesLegend != null)
+                {
+                    bool show = vision != null && (vision.Charges > 0 || vision.IsActive);
+                    if (_glassesLegend.activeSelf != show)
+                    {
+                        _glassesLegend.SetActive(show);
+                    }
+                }
             }
 
             if (_player != null)
@@ -278,11 +297,13 @@ namespace TrainSurvival.Game
             MakeControlItem(lr, "WASD", "移動");
             MakeControlItem(lr, "マウス", "見まわす");
             MakeControlItem(lr, "E ／ 左クリック", "座る");
+            _glassesLegend = MakeControlItem(lr, "右クリック", "メガネ");
+            _glassesLegend.SetActive(false); // チャージを拾ったときだけ出す
             MakeControlItem(lr, "ESC", "小休止");
         }
 
         /// <summary>「キーキャップ＋説明」1項目。</summary>
-        private void MakeControlItem(Transform parent, string key, string desc)
+        private GameObject MakeControlItem(Transform parent, string key, string desc)
         {
             var item = new GameObject("Item", typeof(RectTransform));
             item.transform.SetParent(parent, false);
@@ -301,6 +322,7 @@ namespace TrainSurvival.Game
             d.color = new Color(1f, 1f, 1f, 0.85f);
             d.fontStyle = FontStyle.Bold;
             UiKit.Outline(d);
+            return item;
         }
 
         /// <summary>暗い角丸チップに白フチのキー名を載せた"キーキャップ"。文字幅に合わせて自動で伸縮する。</summary>

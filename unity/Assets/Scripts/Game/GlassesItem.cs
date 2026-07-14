@@ -3,16 +3,16 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 車内に浮かぶデータメガネ。コーヒーと同じくくるくる回転＋ボブ＋光で拾える所在を示し、触れた瞬間に
-    /// 装着＝<see cref="DataVisionView"/> をその日いっぱい有効化する（翌日リセット）。効果中は着席客の頭上に「降りそう度」が
-    /// 数字で見え、席取りが先読みできる。光はコーヒー（暖色）と区別するためシアン。消費は非表示（プール）。
+    /// 車内に浮かぶデータメガネ。コーヒーと同じくくるくる回転＋ボブ＋光で拾える所在を示し、触れると
+    /// 「かけ直し3回分」を入手（<see cref="DataVisionView.GrantCharges"/>）。右クリックで一瞬だけ装着し、
+    /// その間は席そのものが降りそう度の色で光る。光はコーヒー（暖色）と区別するためシアン。消費は非表示（プール）。
     /// </summary>
     public sealed class GlassesItem : MonoBehaviour
     {
-        [SerializeField] private float _visionDuration = 22f; // データ視界の持続秒
+        [SerializeField, Min(1)] private int _charges = 3; // 拾ったとき補充されるかけ直し回数
         [SerializeField] private float _spinSpeed = 80f;
         [SerializeField] private float _bobAmplitude = 0.05f;
-        [SerializeField] private float _bobSpeed = 2f;
+        [SerializeField] private float _bobSpeed = 2.2f;
         [SerializeField] private Color _glowColor = new(0.4f, 0.82f, 1f); // シアン＝情報アイテム
 
         private Vector3 _basePosition;
@@ -42,7 +42,7 @@ namespace TrainSurvival.Game
         private void CaptureBase()
         {
             _basePosition = transform.localPosition;
-            _phase = Random.value * 10f;
+            _phase = 0f; // 全アイテムで上下位置を揃える
         }
 
         private void Update()
@@ -77,7 +77,7 @@ namespace TrainSurvival.Game
             {
                 view = new GameObject("DataVisionView").AddComponent<DataVisionView>();
             }
-            view.ActivateForDay(); // その日いっぱい有効（翌日リセット）
+            view.GrantCharges(_charges); // かけ直し回数を補充（使うのは右クリック）
 
             gameObject.SetActive(false); // 破棄せずプールへ返す
         }

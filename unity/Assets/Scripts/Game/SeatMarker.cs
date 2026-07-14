@@ -19,6 +19,8 @@ namespace TrainSurvival.Game
 
         private bool _available;
         private bool _targeted;
+        private bool _intel;        // データメガネ中の降車予測ハイライト
+        private Color _intelColor;
 
         public int Index { get; private set; }
 
@@ -53,11 +55,28 @@ namespace TrainSurvival.Game
             Apply();
         }
 
+        /// <summary>データメガネの降車予測色（着席中の席が対象）。DataVisionView が付け外しする。</summary>
+        public void SetIntel(bool on, Color color)
+        {
+            if (_intel == on && (!on || _intelColor == color))
+            {
+                return;
+            }
+            _intel = on;
+            _intelColor = color;
+            Apply();
+        }
+
         private void Apply()
         {
             if (_targeted)
             {
                 Tint(TargetColor, TargetColor);
+            }
+            else if (_intel)
+            {
+                // メガネ装着中：席そのものを降りそう度の色に光らせる（緑＝狙い目）
+                Tint(Color.Lerp(_cushionBase, _intelColor, 0.85f), Color.Lerp(_backrestBase, _intelColor, 0.7f));
             }
             else if (_available)
             {

@@ -3,19 +3,19 @@ using UnityEngine;
 namespace TrainSurvival.Game
 {
     /// <summary>
-    /// 栄養ドリンク「モーレツ」（赤い小瓶）。飲むと"その日だけ"移動速度が上がるドーピング＝
-    /// 空いた席へ猛ダッシュできる（椅子取りの主導権を金で買う）。効果は
-    /// <see cref="FirstPersonController.SpeedScale"/> に乗り、乗り換え（翌日）でリセットされる。
-    /// 挙動はコーヒーと同型（回転＋ボブ＋赤い光、接触で自動使用、消費後はプールへ）。
+    /// ダッシュ靴（赤いスニーカー）。履くと"その日だけ"移動速度が上がる＝空いた席へ猛ダッシュできる
+    /// （椅子取りの主導権を足で稼ぐ）。効果は <see cref="FirstPersonController.SpeedScale"/> に乗り、
+    /// 乗り換え（翌日）でリセット。1ランに1足しか出ない希少アイテム。
+    /// 挙動はコーヒーと同型（回転＋ボブ＋赤い光、接触で自動使用）。モデルは外部アセットの
+    /// 赤いスニーカー＋公式URPマテリアルをそのまま使い、素材の陰影や配色を保持する。
     /// </summary>
-    public sealed class MoretsuDrinkItem : MonoBehaviour
+    public sealed class DashShoesItem : MonoBehaviour
     {
         [SerializeField, Range(1f, 2.5f)] private float _speedScale = 1.5f; // その日の移動速度倍率
         [SerializeField] private float _spinSpeed = 110f;
         [SerializeField] private float _bobAmplitude = 0.05f;
-        [SerializeField] private float _bobSpeed = 2.4f;
-        [SerializeField] private Color _glowColor = new(1f, 0.32f, 0.24f); // 赤
-        [SerializeField, Range(0f, 5f)] private float _glowIntensity = 1.4f;
+        [SerializeField] private float _bobSpeed = 2.2f;
+        [SerializeField] private Color _glowColor = new(1f, 0.32f, 0.24f);  // ビーコンの赤
 
         private Vector3 _basePosition;
         private float _phase;
@@ -25,7 +25,6 @@ namespace TrainSurvival.Game
         private void Start()
         {
             _started = true;
-            ItemBeacon.ApplyEmission(gameObject, _glowColor, _glowIntensity);
             gameObject.AddComponent<ItemBeacon>().Configure(_glowColor);
             CaptureBase();
         }
@@ -42,7 +41,7 @@ namespace TrainSurvival.Game
         private void CaptureBase()
         {
             _basePosition = transform.localPosition;
-            _phase = Random.value * 10f;
+            _phase = 0f; // 全アイテムで上下位置を揃える
         }
 
         private void Update()
@@ -61,8 +60,8 @@ namespace TrainSurvival.Game
                 return;
             }
             _consumed = true;
-            GameAudio.Instance.Play(GameAudio.Sfx.Coffee, 1.2f); // 高めのピッチ＝キュッと一杯
-            fpc.SpeedScale = Mathf.Max(fpc.SpeedScale, _speedScale); // その日だけモーレツに動ける
+            GameAudio.Instance.Play(GameAudio.Sfx.Coffee, 1.2f); // 履き替えのキュッ
+            fpc.SpeedScale = Mathf.Max(fpc.SpeedScale, _speedScale); // その日だけ俊足
             gameObject.SetActive(false);
         }
     }

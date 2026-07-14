@@ -754,7 +754,7 @@ MonoBehaviour:
   _coffee:
     label: Coffee
     prefab: {fileID: -927199367670048503, guid: 382c968cf34f54843970ceadf11f84e1, type: 3}
-    count: 4
+    count: 2
     targetSize: 0.26
     modelEuler: {x: 0, y: 0, z: 0}
     kind: 0
@@ -765,9 +765,17 @@ MonoBehaviour:
     targetSize: 0.34
     modelEuler: {x: 0, y: 0, z: 0}
     kind: 1
+  _shoes:
+    label: DashShoes
+    prefab: {fileID: 5030630179998441149, guid: 419c9c6d88d674698a5b338f0e44db06, type: 3}
+    count: 1
+    targetSize: 0.3
+    modelEuler: {x: 0, y: 0, z: 0}
+    kind: 2
   _floatHeight: 1.05
   _aisleX: {x: -0.4, y: 0.4}
   _endMargin: 1.4
+  _doorZJitter: 0.28
   _minSpacing: 1.1
   _respawnEachDay: 1
 --- !u!4 &1465364614

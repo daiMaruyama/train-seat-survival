@@ -10,7 +10,7 @@ namespace TrainSurvival.Game
     /// </summary>
     public sealed class CoffeeCupItem : MonoBehaviour
     {
-        [SerializeField] private float _staminaRestore = 22f;
+        [SerializeField] private float _staminaRestore = 28f; // 本数を絞った分、一杯を効かせる（2個×28＝1日約56回復）
         [SerializeField] private float _spinSpeed = 100f;   // 回転（度/秒）
         [SerializeField] private float _bobAmplitude = 0.05f;
         [SerializeField] private float _bobSpeed = 2.2f;
@@ -46,7 +46,7 @@ namespace TrainSurvival.Game
         private void CaptureBase()
         {
             _basePosition = transform.localPosition;
-            _phase = Random.value * 10f;
+            _phase = 0f; // 全アイテムで上下位置を揃える
         }
 
         private void Update()
