@@ -96,15 +96,17 @@ namespace TrainSurvival.Game
             int days = _director != null ? _director.Leg + 1 : 1;
             int stations = _director != null ? _director.TotalStationsSurvived : 0;
 
-            // ランキングへ記録（ローカル保存。共有DBを繋いだらここから送信も行う）
-            RankingStore.Record(new RankingEntry
+            // ランキングへ記録：ローカル保存＋全国（UGS）へも送信。送信失敗は握りつぶされゲームに影響しない
+            var entry = new RankingEntry
             {
                 name = PlayerProfile.Name,
                 days = days,
                 stations = stations,
                 yen = Payroll.Annual(days, stations), // スコア＝推定年収
                 ticks = System.DateTime.Now.Ticks,
-            });
+            };
+            RankingStore.Record(entry);
+            UgsRanking.Submit(entry);
 
             // 視点操作を止めて「通勤中に倒れる」一人称演出へ
             var fpc = GetComponent<FirstPersonController>();

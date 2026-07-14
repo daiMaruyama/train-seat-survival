@@ -31,8 +31,20 @@ namespace TrainSurvival.Game
 
         private static RankingView _open;
 
+        private const string DefaultNotice = "本日も定時運行の予定はありません。ご了承ください。";
+
         private long _highlightTicks;
         private Image _highlightStripe;
+
+        // 社内（ローカル）⇄ 全国（UGS）の切替。全国は取得に失敗したら社内表示のまま
+        private List<RankingEntry> _localEntries;
+        private RectTransform _rowsRoot;
+        private Text _statusChipText;
+        private Image _statusChip;
+        private Text _noticeText;
+        private Text _toggleLabel;
+        private bool _globalMode;
+        private bool _fetching;
 
         /// <summary>開いているか（背後のキー操作を止める判定用）。</summary>
         public static bool IsOpen => _open != null;
@@ -112,6 +124,7 @@ namespace TrainSurvival.Game
             RectTransform br = board.rectTransform;
 
             List<RankingEntry> entries = RankingStore.Load();
+            _localEntries = entries;
             int highlightIndex = _highlightTicks != 0 ? entries.FindIndex(e => e.ticks == _highlightTicks) : -1;
             bool showingNewRecord = highlightIndex >= 0;
 
@@ -130,22 +143,22 @@ namespace TrainSurvival.Game
             subTitle.rectTransform.anchorMin = new Vector2(0f, 0f);
             subTitle.rectTransform.anchorMax = new Vector2(0.58f, 0.34f);
 
-            Image status = CreateImage("Status", headBar.rectTransform,
+            _statusChip = CreateImage("Status", headBar.rectTransform,
                 showingNewRecord
                     ? new Color(LedAmber.r, LedAmber.g, LedAmber.b, 0.18f)
                     : new Color(LedDim.r, LedDim.g, LedDim.b, 0.12f));
-            UiKit.Panelize(status, 8);
-            RectTransform statusRect = status.rectTransform;
+            UiKit.Panelize(_statusChip, 8);
+            RectTransform statusRect = _statusChip.rectTransform;
             statusRect.anchorMin = new Vector2(0.66f, 0.18f);
             statusRect.anchorMax = new Vector2(0.965f, 0.82f);
             statusRect.offsetMin = Vector2.zero;
             statusRect.offsetMax = Vector2.zero;
-            Text route = FullText("Route", statusRect, 21, TextAnchor.MiddleCenter,
+            _statusChipText = FullText("Route", statusRect, 21, TextAnchor.MiddleCenter,
                 showingNewRecord ? LedAmber : LedGreen, 22f);
-            route.text = showingNewRecord
+            _statusChipText.text = showingNewRecord
                 ? $"● RANKING UPDATED　#{highlightIndex + 1:00}"
                 : $"● LOCAL ARCHIVE　{entries.Count:00} / 10";
-            route.fontStyle = FontStyle.Bold;
+            _statusChipText.fontStyle = FontStyle.Bold;
 
             Image headRule = CreateImage("HeadRule", br, new Color(LedDim.r, LedDim.g, LedDim.b, 0.55f));
             EdgeTop(headRule.rectTransform, 112f, 4f, 32f);
@@ -158,14 +171,49 @@ namespace TrainSurvival.Game
             AddCell(head, "勤続", 0.55f, 0.67f, 21, LedDim, TextAnchor.MiddleRight, bold: true);
             AddCell(head, "推定年収", 0.69f, 0.98f, 21, LedDim, TextAnchor.MiddleRight, bold: true);
 
-            // 序列（10行）
+            // 序列（10行）は作り直せるコンテナに入れる（社内⇄全国の切替で丸ごと再構築する）
+            var rowsGo = new GameObject("Rows", typeof(RectTransform));
+            _rowsRoot = rowsGo.GetComponent<RectTransform>();
+            _rowsRoot.SetParent(br, false);
+            Stretch(_rowsRoot);
+            BuildRows(entries, _highlightTicks);
+
+            // 下段の案内テロップ＋盤面内のボタン
+            const float rowH = 59f;
+            Image footRule = CreateImage("FootRule", br, new Color(LedDim.r, LedDim.g, LedDim.b, 0.4f));
+            EdgeTop(footRule.rectTransform, 180f + 10 * rowH + 8f, 2f, 32f);
+            _noticeText = FullText("Notice", br, 21, TextAnchor.MiddleLeft, LedRed, 60f);
+            _noticeText.text = DefaultNotice;
+            EdgeTopRect(_noticeText.rectTransform, 180f + 10 * rowH + 22f, 32f, 60f);
+
+            Text closeHint = FullText("CloseHint", br, 18, TextAnchor.MiddleRight, LedDim, 60f);
+            closeHint.text = "ESC / パネル外クリックで閉じる";
+            EdgeTopRect(closeHint.rectTransform, 180f + 10 * rowH + 22f, 32f, 60f);
+
+            // LED盤のドット格子（文字の上・ボタンの下に重ねる＝電光掲示板の質感）
+            UiKit.AddLedGrid(br, 0.28f);
+
+            UiKit.MakeButton(br, new Vector2(-170f, -(BoardH * 0.5f) + 56f), new Vector2(300f, 70f), "閉じる", 24, Close);
+            Button toggle = UiKit.MakeButton(br, new Vector2(170f, -(BoardH * 0.5f) + 56f), new Vector2(300f, 70f), "全国版へ", 24, ToggleGlobal);
+            _toggleLabel = toggle.GetComponentInChildren<Text>();
+        }
+
+        /// <summary>序列10行を（再）構築する。社内⇄全国どちらも同じ見た目・同じ型で描く。</summary>
+        private void BuildRows(List<RankingEntry> entries, long highlightTicks)
+        {
+            for (int i = _rowsRoot.childCount - 1; i >= 0; i--)
+            {
+                Destroy(_rowsRoot.GetChild(i).gameObject);
+            }
+            _highlightStripe = null;
+
             const float rowH = 59f;
             for (int i = 0; i < 10; i++)
             {
                 float y = 180f + i * rowH;
-                RectTransform row = Row(br, y, rowH - 6f);
+                RectTransform row = Row(_rowsRoot, y, rowH - 6f);
                 bool has = i < entries.Count;
-                bool highlight = has && _highlightTicks != 0 && entries[i].ticks == _highlightTicks;
+                bool highlight = has && highlightTicks != 0 && entries[i].ticks == highlightTicks;
                 bool top3 = i < 3;
 
                 // 1位は金の面、2〜3位はやや明るい青灰、以降は交互の暗い縞＝輝度の階段で序列を見せる
@@ -228,22 +276,56 @@ namespace TrainSurvival.Game
                     AddCell(row, "（回送）", 0.27f, 0.51f, size, new Color(1f, 1f, 1f, 0.18f), TextAnchor.MiddleLeft);
                 }
             }
+        }
 
-            // 下段の案内テロップ＋盤面内の閉じるボタン
-            Image footRule = CreateImage("FootRule", br, new Color(LedDim.r, LedDim.g, LedDim.b, 0.4f));
-            EdgeTop(footRule.rectTransform, 180f + 10 * rowH + 8f, 2f, 32f);
-            Text notice = FullText("Notice", br, 21, TextAnchor.MiddleLeft, LedRed, 60f);
-            notice.text = "本日も定時運行の予定はありません。ご了承ください。";
-            EdgeTopRect(notice.rectTransform, 180f + 10 * rowH + 22f, 32f, 60f);
+        /// <summary>社内⇄全国の切替。全国は非同期取得し、失敗したら社内表示のまま案内だけ出す。</summary>
+        private void ToggleGlobal()
+        {
+            if (_fetching)
+            {
+                return;
+            }
 
-            Text closeHint = FullText("CloseHint", br, 18, TextAnchor.MiddleRight, LedDim, 60f);
-            closeHint.text = "ESC / パネル外クリックで閉じる";
-            EdgeTopRect(closeHint.rectTransform, 180f + 10 * rowH + 22f, 32f, 60f);
+            if (_globalMode)
+            {
+                // 社内へ戻す（ローカルは手元にあるので即時）
+                _globalMode = false;
+                BuildRows(_localEntries, _highlightTicks);
+                _statusChipText.text = $"● LOCAL ARCHIVE　{_localEntries.Count:00} / 10";
+                _statusChipText.color = LedGreen;
+                _noticeText.text = DefaultNotice;
+                _toggleLabel.text = "全国版へ";
+                return;
+            }
 
-            // LED盤のドット格子（文字の上・ボタンの下に重ねる＝電光掲示板の質感）
-            UiKit.AddLedGrid(br, 0.28f);
+            StartCoroutine(FetchGlobalRoutine());
+        }
 
-            UiKit.MakeButton(br, new Vector2(0f, -(BoardH * 0.5f) + 56f), new Vector2(300f, 70f), "閉じる", 24, Close);
+        private System.Collections.IEnumerator FetchGlobalRoutine()
+        {
+            _fetching = true;
+            _noticeText.text = "全国ネットワークに接続しています…";
+            var task = UgsRanking.FetchTopAsync(10);
+            while (!task.IsCompleted)
+            {
+                yield return null;
+            }
+            _fetching = false;
+
+            List<RankingEntry> global = task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? task.Result : null;
+            if (global == null)
+            {
+                // 圏外：社内表示のまま、発車標らしい言い回しで案内
+                _noticeText.text = "ただいま全国ネットワークは圏外です。社内記録を表示しています。";
+                yield break;
+            }
+
+            _globalMode = true;
+            BuildRows(global, 0);
+            _statusChipText.text = $"● NATIONAL NETWORK　{global.Count:00} / 10";
+            _statusChipText.color = LedGreen;
+            _noticeText.text = "全国の社畜と比較しています。上には上がいるものです。";
+            _toggleLabel.text = "社内版へ";
         }
 
         private static string RankTitle(int index)

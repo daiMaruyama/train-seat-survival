@@ -98,6 +98,7 @@ namespace TrainSurvival.Game
             StartCoroutine(TitleRevealRoutine());
             StartCoroutine(AmbientHornRoutine());
             StartCoroutine(PrewarmPassengersRoutine());
+            _ = UgsRanking.InitializeAsync(); // 全国ランキングのサインインを裏で温めておく（失敗してもローカルで動く）
         }
 
         private void Update()
