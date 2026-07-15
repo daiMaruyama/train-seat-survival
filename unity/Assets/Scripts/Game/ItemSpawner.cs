@@ -7,8 +7,8 @@ namespace TrainSurvival.Game
     /// <summary>
     /// 車内アイテム（コーヒー＝回復／データメガネ＝情報／ダッシュ靴＝加速）をプールで管理する生成器。
     /// ・prefab・個数・大きさは Inspector からシリアライズして差し替え可能
-    /// ・毎回作り直さずプールを使い回し、配置だけ「プレイヤーが取れる通路上」でランダム化（高さは固定）
-    /// ・消費されたアイテムは非表示になり、日替わり（Leg 更新）で位置を撒き直して再表示＝それ以上増えない
+    /// ・日の開始時に1〜2個、その後は毎駅ドア脇へ1個ずつ補充する
+    /// ・未取得品はその日の間は残し、「空席を狙うか、アイテムへ寄るか」の選択を作る
     /// モデルの寸法はバウンズから自動正規化し、当たり判定と拾い挙動は生成時に付与する。
     /// </summary>
     public sealed class ItemSpawner : MonoBehaviour
@@ -28,24 +28,40 @@ namespace TrainSurvival.Game
 
         [Header("プール（prefab をアサインしてね。靴は未設定ならプリミティブで代用）")]
         [SerializeField] private Pool _coffee = new() { label = "Coffee", count = 2, targetSize = 0.26f, kind = ItemKind.Coffee };
-        [SerializeField] private Pool _glasses = new() { label = "Glasses", count = 1, targetSize = 0.34f, kind = ItemKind.Glasses };
-        [SerializeField] private Pool _shoes = new() { label = "DashShoes", count = 1, targetSize = 0.30f, kind = ItemKind.Shoes };
+        [SerializeField] private Pool _glasses = new() { label = "Glasses", count = 2, targetSize = 0.34f, kind = ItemKind.Glasses };
+        [SerializeField] private Pool _shoes = new() { label = "DashShoes", count = 2, targetSize = 0.30f, kind = ItemKind.Shoes };
 
-        [Header("配置（プレイヤーが取れる通路上・高さ固定）")]
-        [SerializeField] private float _floatHeight = 1.05f;             // 浮遊高さ（胸元＝視界に入る）
-        [SerializeField] private Vector2 _aisleX = new(-0.4f, 0.4f);     // 通路の左右の振れ幅
-        [SerializeField] private float _endMargin = 1.4f;               // 車端から内側へ空ける距離
-        [SerializeField] private float _doorZJitter = 0.28f;            // ドア中央への重なりを避ける前後幅
-        [SerializeField] private float _minSpacing = 1.1f;              // アイテム同士の最小間隔
-        [SerializeField] private bool _respawnEachDay = true;           // 日替わりで撒き直す
+        [Header("駅到着時の出現（ドア前・高さ固定）")]
+        [SerializeField] private float _floatHeight = 1.05f;             // 胸元の高さ
+        [SerializeField] private float _doorSideOffset = 0.68f;         // ドア中央を塞がず、左右へ寄せる
+        [SerializeField] private float _doorZJitter = 0.18f;
+        [SerializeField, Min(0)] private int _initialSpawnMin = 1;
+        [SerializeField, Min(1)] private int _initialSpawnMax = 2;
+        [SerializeField, Min(1)] private int _spawnEveryStations = 1;    // 毎駅1個補充
+        [SerializeField, Min(1)] private int _maxSpawnsPerDay = 6;
+        [SerializeField, Min(1)] private int _maxActiveItems = 4;        // 未取得品の溜まり過ぎを防ぐ
+        [SerializeField] private float _minPlayerDistance = 1.8f;       // 足元へ突然生えない距離
+        [SerializeField] private bool _despawnOnDoorClose = false;
 
         private CommuteDirector _director;
         private CarBuilder _car;
+        private Transform _player;
         private readonly List<GameObject> _all = new();
-        private float _zMin;
-        private float _zMax;
+        private readonly List<GameObject> _spawnQueue = new();
+        private readonly List<GameObject> _activeItems = new();
         private int _lastLeg = -1;
+        private int _spawnedThisDay;
         private bool _ready;
+
+        /// <summary>いま駅のドア脇に受け取れるアイテムが出ているか（HUD通知用）。</summary>
+        public bool HasActiveItem
+        {
+            get
+            {
+                RemoveInactiveItems();
+                return _activeItems.Count > 0;
+            }
+        }
 
         private void Start()
         {
@@ -64,42 +80,38 @@ namespace TrainSurvival.Game
                 yield return null;
             }
 
-            ComputeAisleRange();
             BuildPool(_coffee);
             BuildPool(_glasses);
             BuildPool(_shoes);
-            RepositionAll();
+            _player = FindFirstObjectByType<StaminaSystem>()?.transform;
+            _director.StationReached += HandleStationReached;
+            _director.DoorsClosed += HandleDoorsClosed;
             _lastLeg = _director.Leg;
+            PrepareDay();
             _ready = true;
+            SpawnInitialItems();
         }
 
         private void Update()
         {
-            if (!_ready || !_respawnEachDay || _director == null)
+            if (!_ready || _director == null)
             {
                 return;
             }
             if (_director.Leg != _lastLeg)
             {
                 _lastLeg = _director.Leg;
-                RepositionAll(); // 新しい日：全アイテムを撒き直して再表示（消費済みも復活）
+                PrepareDay();
+                SpawnInitialItems();
             }
         }
 
-        private void ComputeAisleRange()
+        private void OnDestroy()
         {
-            _zMin = float.MaxValue;
-            _zMax = float.MinValue;
-            for (int i = 0; i < _director.SeatCount; i++)
+            if (_director != null)
             {
-                float z = _director.GetSeat(i).Position.z;
-                _zMin = Mathf.Min(_zMin, z);
-                _zMax = Mathf.Max(_zMax, z);
-            }
-            if (_zMin > _zMax)
-            {
-                _zMin = -2f;
-                _zMax = 2f;
+                _director.StationReached -= HandleStationReached;
+                _director.DoorsClosed -= HandleDoorsClosed;
             }
         }
 
@@ -244,75 +256,185 @@ namespace TrainSurvival.Game
             model.transform.position -= b2.center - root.position;
         }
 
-        private void RepositionAll()
+        /// <summary>新しい日は全品を一旦隠し、出現順だけシャッフルする。</summary>
+        private void PrepareDay()
         {
-            var placed = new List<Vector3>();
+            _activeItems.Clear();
+            _spawnedThisDay = 0;
+            _spawnQueue.Clear();
             foreach (GameObject item in _all)
             {
-                if (item == null)
-                {
-                    continue;
-                }
-                // 偶数番はドア前、奇数番は通路へ。どちらも中央通路内・同じ高さに限定する。
-                bool preferDoor = placed.Count % 2 == 0;
-                Vector3 pos = PickReachableSpot(placed, preferDoor);
-                placed.Add(pos);
-                // Activeのまま位置だけ変えると各アイテムが保持するボブ基準座標が更新されない。
-                // 必ず再Enableして、全種類を同じ高さ・新しい位置から動かす。
+                if (item == null) continue;
                 item.SetActive(false);
-                item.transform.localPosition = pos;
-                item.SetActive(true); // OnEnable で消費フラグ・基準位置がリセットされる
+            }
+
+            // 3枠の日はコーヒーだけに偏らず、回復・情報・加速を1回ずつ候補にする。
+            QueueFirstOfType<CoffeeCupItem>();
+            QueueFirstOfType<GlassesItem>();
+            QueueFirstOfType<DashShoesItem>();
+            for (int i = _spawnQueue.Count - 1; i > 0; i--)
+            {
+                int j = Random.Range(0, i + 1);
+                (_spawnQueue[i], _spawnQueue[j]) = (_spawnQueue[j], _spawnQueue[i]);
+            }
+
+            // 各種類の代表を並べた後ろへ余剰分を足す。上限を増やした場合だけ使われる。
+            foreach (GameObject item in _all)
+            {
+                if (item != null && !_spawnQueue.Contains(item))
+                {
+                    _spawnQueue.Add(item);
+                }
             }
         }
 
-        /// <summary>ドア前または通路上から、高さ固定で既存アイテムと近すぎない一点を選ぶ。</summary>
-        private Vector3 PickReachableSpot(List<Vector3> placed, bool preferDoor)
+        private void QueueFirstOfType<T>() where T : Component
         {
-            float zLo = _zMin + _endMargin;
-            float zHi = _zMax - _endMargin;
-            if (zLo > zHi)
+            foreach (GameObject item in _all)
             {
-                float mid = (_zMin + _zMax) * 0.5f;
-                zLo = zHi = mid;
-            }
-
-            Vector3 best = Candidate(preferDoor, zLo, zHi);
-            for (int attempt = 0; attempt < 20; attempt++)
-            {
-                // ドア前が混んでいたら後半は通路へ逃がし、重なりを作らない。
-                bool useDoor = preferDoor && attempt < 10;
-                Vector3 candidate = Candidate(useDoor, zLo, zHi);
-                bool ok = true;
-                foreach (Vector3 p in placed)
+                if (item != null && item.GetComponent<T>() != null)
                 {
-                    if (Vector3.Distance(candidate, p) < _minSpacing)
-                    {
-                        ok = false;
-                        break;
-                    }
+                    _spawnQueue.Add(item);
+                    return;
                 }
-                if (ok)
-                {
-                    return candidate;
-                }
-                best = candidate;
             }
-            return best;
         }
 
-        private Vector3 Candidate(bool useDoor, float zLo, float zHi)
+        private void HandleStationReached(int station)
         {
-            float z;
-            if (useDoor && _car != null && _car.Doors.Count > 0)
+            if (!_ready || station <= 0 || _spawnedThisDay >= Mathf.Max(1, _maxSpawnsPerDay))
             {
-                Vector3 door = _car.Doors[Random.Range(0, _car.Doors.Count)];
-                z = Mathf.Clamp(door.z + Random.Range(-_doorZJitter, _doorZJitter), zLo, zHi);
+                return;
             }
-            else
+
+            int cadence = Mathf.Max(1, _spawnEveryStations);
+            if ((station - 1) % cadence != 0)
             {
-                z = Random.Range(zLo, zHi);
+                return;
             }
-            return new Vector3(Random.Range(_aisleX.x, _aisleX.y), _floatHeight, z);
+            RemoveInactiveItems();
+            if (_activeItems.Count < Mathf.Max(1, _maxActiveItems))
+            {
+                SpawnNextAtDoor(playSound: true);
+            }
+        }
+
+        private void HandleDoorsClosed()
+        {
+            if (!_despawnOnDoorClose)
+            {
+                return;
+            }
+            for (int i = 0; i < _activeItems.Count; i++)
+            {
+                if (_activeItems[i] != null)
+                {
+                    _activeItems[i].SetActive(false);
+                }
+            }
+            _activeItems.Clear();
+        }
+
+        private void SpawnInitialItems()
+        {
+            int min = Mathf.Clamp(_initialSpawnMin, 0, _spawnQueue.Count);
+            int max = Mathf.Clamp(Mathf.Max(min, _initialSpawnMax), min, _spawnQueue.Count);
+            int count = max > min ? Random.Range(min, max + 1) : min;
+            count = Mathf.Min(count, Mathf.Max(1, _maxActiveItems));
+            for (int i = 0; i < count; i++)
+            {
+                SpawnNextAtDoor(playSound: false);
+            }
+        }
+
+        private void RemoveInactiveItems()
+        {
+            for (int i = _activeItems.Count - 1; i >= 0; i--)
+            {
+                GameObject item = _activeItems[i];
+                if (item == null || !item.activeSelf)
+                {
+                    _activeItems.RemoveAt(i);
+                }
+            }
+        }
+
+        private void SpawnNextAtDoor(bool playSound)
+        {
+            if (_spawnQueue.Count == 0 || _car == null || _car.Doors.Count == 0)
+            {
+                return;
+            }
+
+            GameObject item = _spawnQueue[0];
+            _spawnQueue.RemoveAt(0);
+            _spawnedThisDay++;
+
+            Vector3 door = PickDoorAwayFromPlayer();
+            // 初期2個が同じドア脇に重ならないよう、既存品と遠い側を優先する。
+            float side = PickDoorSide(door);
+            Vector3 carLocal = door + new Vector3(side * _doorSideOffset, _floatHeight,
+                Random.Range(-_doorZJitter, _doorZJitter));
+            Vector3 world = _car.transform.TransformPoint(carLocal);
+
+            // Activeのまま動かすとアイテム側のボブ基準が古いままなので、位置決定後にEnableする。
+            item.SetActive(false);
+            item.transform.localPosition = transform.InverseTransformPoint(world);
+            item.SetActive(true);
+            _activeItems.Add(item);
+            if (playSound)
+            {
+                GameAudio.Instance.Play(GameAudio.Sfx.Ding, 1.18f);
+            }
+        }
+
+        private float PickDoorSide(Vector3 door)
+        {
+            Vector3 left = _car.transform.TransformPoint(door + Vector3.left * _doorSideOffset);
+            Vector3 right = _car.transform.TransformPoint(door + Vector3.right * _doorSideOffset);
+            float leftNearest = NearestActiveDistance(left);
+            float rightNearest = NearestActiveDistance(right);
+            if (Mathf.Abs(leftNearest - rightNearest) < 0.05f)
+            {
+                return Random.value < 0.5f ? -1f : 1f;
+            }
+            return leftNearest > rightNearest ? -1f : 1f;
+        }
+
+        private float NearestActiveDistance(Vector3 world)
+        {
+            float nearest = float.MaxValue;
+            for (int i = 0; i < _activeItems.Count; i++)
+            {
+                GameObject active = _activeItems[i];
+                if (active != null && active.activeSelf)
+                {
+                    nearest = Mathf.Min(nearest, Vector3.Distance(world, active.transform.position));
+                }
+            }
+            return nearest;
+        }
+
+        private Vector3 PickDoorAwayFromPlayer()
+        {
+            IReadOnlyList<Vector3> doors = _car.Doors;
+            if (_player == null)
+            {
+                _player = FindFirstObjectByType<StaminaSystem>()?.transform;
+            }
+
+            var candidates = new List<Vector3>();
+            for (int i = 0; i < doors.Count; i++)
+            {
+                Vector3 world = _car.transform.TransformPoint(doors[i]);
+                if (_player == null || Vector3.Distance(world, _player.position) >= _minPlayerDistance)
+                {
+                    candidates.Add(doors[i]);
+                }
+            }
+
+            IReadOnlyList<Vector3> source = candidates.Count > 0 ? candidates : doors;
+            return source[Random.Range(0, source.Count)];
         }
     }
 }

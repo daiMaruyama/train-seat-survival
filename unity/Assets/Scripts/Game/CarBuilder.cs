@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -41,7 +42,16 @@ namespace TrainSurvival.Game
         private readonly List<SeatAnchor> _seats = new List<SeatAnchor>();
         private readonly List<Vector3> _doors = new List<Vector3>();
         private readonly List<SeatMarker> _markers = new List<SeatMarker>();
-        private readonly List<Renderer> _doorRenderers = new List<Renderer>();
+        private sealed class DoorAssembly
+        {
+            public Transform LeftLeaf;
+            public Transform RightLeaf;
+            public Vector3 LeftClosed;
+            public Vector3 RightClosed;
+            public float Travel;
+        }
+
+        private readonly List<DoorAssembly> _doorAssemblies = new List<DoorAssembly>();
         // 車内プリミティブはパレット色ごとに1枚のURPマテリアルを共有する。
         // CreatePrimitive の既定マテリアルはURP Playerで非対応になり得るため使用しない。
         private readonly Dictionary<Color32, Material> _opaqueMaterials = new Dictionary<Color32, Material>();
@@ -62,15 +72,37 @@ namespace TrainSurvival.Game
             _nextSpawnCoffeeOverride = spawn;
         }
 
-        /// <summary>ドアを視覚的に開閉する。コライダーは残すので車外へは出られない。</summary>
-        public void SetDoorsOpen(bool open)
+        /// <summary>
+        /// ドアの2枚の戸を左右へ滑らせる。透明バリアは固定なので車外へは出られない。
+        /// 乗降処理はこの完了後に始め、人が閉じたドアから現れる印象を防ぐ。
+        /// </summary>
+        public IEnumerator AnimateDoors(bool open, float duration = 0.46f)
         {
-            for (int i = 0; i < _doorRenderers.Count; i++)
+            duration = Mathf.Max(0.01f, duration);
+            var leftFrom = new Vector3[_doorAssemblies.Count];
+            var rightFrom = new Vector3[_doorAssemblies.Count];
+            for (int i = 0; i < _doorAssemblies.Count; i++)
             {
-                if (_doorRenderers[i] != null)
+                DoorAssembly door = _doorAssemblies[i];
+                leftFrom[i] = door.LeftLeaf.localPosition;
+                rightFrom[i] = door.RightLeaf.localPosition;
+            }
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float smooth = t * t * (3f - 2f * t);
+                for (int i = 0; i < _doorAssemblies.Count; i++)
                 {
-                    _doorRenderers[i].enabled = !open;
+                    DoorAssembly door = _doorAssemblies[i];
+                    Vector3 leftTo = door.LeftClosed + Vector3.back * (open ? door.Travel : 0f);
+                    Vector3 rightTo = door.RightClosed + Vector3.forward * (open ? door.Travel : 0f);
+                    door.LeftLeaf.localPosition = Vector3.Lerp(leftFrom[i], leftTo, smooth);
+                    door.RightLeaf.localPosition = Vector3.Lerp(rightFrom[i], rightTo, smooth);
                 }
+                yield return null;
             }
         }
 
@@ -107,13 +139,10 @@ namespace TrainSurvival.Game
             float backrestX = sign * (halfW - 0.12f);
             Quaternion facing = Quaternion.LookRotation(new Vector3(-sign, 0f, 0f));
 
-            // 窓帯(1.25〜1.85)だけ開口した壁：下帯＋上帯の2枚で組み、開口部にはガラスを張る
+            // 窓帯(1.25〜1.85)だけ開口した壁。ドア部分まで一枚壁で塞がないよう、
+            // 壁はベンチ区画ごとに置く（ドアが開いた時だけ床まで抜ける）。
             const float glassBottom = 1.25f;
             const float glassTop = 1.85f;
-            CreateBlock($"Wall_{sign}_Low", new Vector3(wallX, (glassBottom - _floorDrop) * 0.5f, 0f),
-                new Vector3(0.1f, glassBottom + _floorDrop, length), WallColor);
-            CreateBlock($"Wall_{sign}_High", new Vector3(wallX, (glassTop + _wallHeight) * 0.5f, 0f),
-                new Vector3(0.1f, _wallHeight - glassTop, length), WallColor);
 
             float z = -length * 0.5f;
             for (int s = 0; s < _benchPattern.Length; s++)
@@ -126,6 +155,11 @@ namespace TrainSurvival.Game
                 bool priority = s == 0 || s == _benchPattern.Length - 1;
                 Color cushion = priority ? PriorityCushion : CushionColor;
                 Color backrest = priority ? PriorityBackrest : BackrestColor;
+
+                CreateBlock($"Wall_{sign}_{s}_Low", new Vector3(wallX, (glassBottom - _floorDrop) * 0.5f, center),
+                    new Vector3(0.1f, glassBottom + _floorDrop, segLen), WallColor);
+                CreateBlock($"Wall_{sign}_{s}_High", new Vector3(wallX, (glassTop + _wallHeight) * 0.5f, center),
+                    new Vector3(0.1f, _wallHeight - glassTop, segLen), WallColor);
 
                 // 窓＝半透明ガラス（開口部に張る。外の景色が見える）
                 CreateGlass($"Window_{sign}_{s}", new Vector3(wallX, (glassBottom + glassTop) * 0.5f, center),
@@ -161,27 +195,31 @@ namespace TrainSurvival.Game
                     // ドア＝窓部分をくり抜いた枠＋ガラス（外が見える）。壁より少し内側に配置してZファイト回避
                     float doorX = wallX - sign * 0.03f;
                     float dw = _doorWidth - 0.1f;
-                    float doorGlassW = dw * 0.55f;
-                    float frameW = (dw - doorGlassW) * 0.5f;
                     const float doorWinB = 1.25f;
                     const float doorWinT = 1.78f;
                     float doorH = 2.1f + _floorDrop;
-                    float doorCenterY = (2.1f - _floorDrop) * 0.5f;
-                    // 左右の縦枠（全高）
-                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_L", new Vector3(doorX, doorCenterY, dz - (doorGlassW + frameW) * 0.5f),
-                        new Vector3(0.06f, doorH, frameW), DoorColor));
-                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_R", new Vector3(doorX, doorCenterY, dz + (doorGlassW + frameW) * 0.5f),
-                        new Vector3(0.06f, doorH, frameW), DoorColor));
-                    // 窓下・窓上のパネル
-                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_Low", new Vector3(doorX, (doorWinB - _floorDrop) * 0.5f, dz),
-                        new Vector3(0.06f, doorWinB + _floorDrop, doorGlassW), DoorColor));
-                    RegisterDoorPart(CreateBlock($"Door_{sign}_{s}_High", new Vector3(doorX, (doorWinT + 2.1f) * 0.5f, dz),
-                        new Vector3(0.06f, 2.1f - doorWinT, doorGlassW), DoorColor));
-                    // ドアガラス
-                    RegisterDoorPart(CreateGlass($"DoorWindow_{sign}_{s}", new Vector3(doorX, (doorWinB + doorWinT) * 0.5f, dz),
-                        new Vector3(0.04f, doorWinT - doorWinB, doorGlassW)));
-                    RegisterDoorPart(CreateBlock($"DoorAccent_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 2.2f, dz),
-                        new Vector3(0.03f, 0.12f, _doorWidth - 0.1f), AccentOrange, withCollider: false));
+                    float leafW = dw * 0.5f;
+                    Transform leftLeaf = BuildDoorLeaf($"Door_{sign}_{s}_Left", doorX, dz - leafW * 0.5f,
+                        leafW, doorWinB, doorWinT);
+                    Transform rightLeaf = BuildDoorLeaf($"Door_{sign}_{s}_Right", doorX, dz + leafW * 0.5f,
+                        leafW, doorWinB, doorWinT);
+                    _doorAssemblies.Add(new DoorAssembly
+                    {
+                        LeftLeaf = leftLeaf,
+                        RightLeaf = rightLeaf,
+                        LeftClosed = leftLeaf.localPosition,
+                        RightClosed = rightLeaf.localPosition,
+                        Travel = leafW * 0.94f,
+                    });
+
+                    // 見た目の戸は滑らせるが、車外へ落ちないよう透明バリアは開口部に残す。
+                    var barrier = new GameObject($"DoorBarrier_{sign}_{s}");
+                    barrier.transform.SetParent(transform, false);
+                    barrier.transform.localPosition = new Vector3(doorX, (2.1f - _floorDrop) * 0.5f, dz);
+                    var barrierCollider = barrier.AddComponent<BoxCollider>();
+                    barrierCollider.size = new Vector3(0.08f, doorH, dw);
+                    CreateBlock($"DoorAccent_{sign}_{s}", new Vector3(wallX - sign * 0.03f, 2.2f, dz),
+                        new Vector3(0.03f, 0.12f, _doorWidth - 0.1f), AccentOrange, withCollider: false);
                     if (recordDoors)
                     {
                         _doors.Add(new Vector3(0f, 0f, dz));
@@ -189,6 +227,31 @@ namespace TrainSurvival.Game
                     z += _doorWidth;
                 }
             }
+        }
+
+        private Transform BuildDoorLeaf(string name, float x, float z, float width, float windowBottom, float windowTop)
+        {
+            var root = new GameObject(name).transform;
+            root.SetParent(transform, false);
+
+            GameObject low = CreateBlock("Lower", new Vector3(x, (windowBottom - _floorDrop) * 0.5f, z),
+                new Vector3(0.06f, windowBottom + _floorDrop, width - 0.02f), DoorColor, withCollider: false);
+            low.transform.SetParent(root, true);
+            GameObject high = CreateBlock("Upper", new Vector3(x, (windowTop + 2.1f) * 0.5f, z),
+                new Vector3(0.06f, 2.1f - windowTop, width - 0.02f), DoorColor, withCollider: false);
+            high.transform.SetParent(root, true);
+            GameObject glass = CreateGlass("Glass", new Vector3(x, (windowBottom + windowTop) * 0.5f, z),
+                new Vector3(0.04f, windowTop - windowBottom, width - 0.11f));
+            glass.transform.SetParent(root, true);
+
+            // 中央合わせと外縁の細い枠で、2枚戸として読めるようにする。
+            GameObject rimA = CreateBlock("RimA", new Vector3(x - 0.006f, (2.1f - _floorDrop) * 0.5f, z - width * 0.5f + 0.025f),
+                new Vector3(0.075f, 2.1f + _floorDrop, 0.05f), DoorColor, withCollider: false);
+            rimA.transform.SetParent(root, true);
+            GameObject rimB = CreateBlock("RimB", new Vector3(x - 0.006f, (2.1f - _floorDrop) * 0.5f, z + width * 0.5f - 0.025f),
+                new Vector3(0.075f, 2.1f + _floorDrop, 0.05f), DoorColor, withCollider: false);
+            rimB.transform.SetParent(root, true);
+            return root;
         }
 
         /// <summary>通路の左右に走る吊り革のライン（レール＋等間隔の吊り革）。</summary>
@@ -257,15 +320,6 @@ namespace TrainSurvival.Game
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.sharedMaterial = _glassMaterial;
             return go;
-        }
-
-        private void RegisterDoorPart(GameObject go)
-        {
-            Renderer renderer = go != null ? go.GetComponent<Renderer>() : null;
-            if (renderer != null)
-            {
-                _doorRenderers.Add(renderer);
-            }
         }
 
         /// <summary>吊り革の輪。プリミティブにトーラスは無いのでメッシュを一度だけ生成して全輪で共有する。</summary>

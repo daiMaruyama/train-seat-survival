@@ -22,6 +22,10 @@ namespace TrainSurvival.Game
         [SerializeField] private float _farDistance = 22f;  // 窓からの距離（遠景）
         [SerializeField] private int _buildingsPerLayer = 6; // 片側・1層あたりのビル数
 
+        [Header("停車ホーム（軽量プリミティブ）")]
+        [SerializeField] private float _stationApproachTime = 1.1f;
+        [SerializeField] private float _stationApproachDistance = 54f;
+
         // 車内（明るい暖色グレー）と被らない、彩度のある街色パレット
         private static readonly Color[] BuildingColors =
         {
@@ -47,6 +51,8 @@ namespace TrainSurvival.Game
         private readonly List<Mesh> _meshes = new List<Mesh>();
         private Material _windowMaterial;
         private CommuteDirector _director;
+        private Transform _stationRoot;
+        private bool _wasAtStation;
         private static int? _nextBuildingCountOverride;
 
         public static void OverrideNextBuildingCount(int count)
@@ -72,10 +78,14 @@ namespace TrainSurvival.Game
                 BuildLayer(side, _nearDistance, _nearSpeed, heightMin: 3f, heightMax: 9f, tint: Color.white);
                 BuildLayer(side, _farDistance, _farSpeed, heightMin: 8f, heightMax: 20f, tint: FarTintMul);
             }
+            BuildStationPlatform();
         }
 
         private void Update()
         {
+            bool atStation = _director != null && _director.IsAtStation;
+            UpdateStationPlatform(atStation);
+
             // 電車の疑似速度（停車で0、発車で1へ）に連動して流す
             float speed01 = _director != null ? _director.TrainSpeed01 : 1f;
             if (speed01 <= 0.001f)
@@ -102,6 +112,90 @@ namespace TrainSurvival.Game
                     b.position = p;
                 }
             }
+        }
+
+        /// <summary>
+        /// 本格的な駅アセットの代わりに、床・黄色線・壁・柱だけの軽いホームを作る。
+        /// 減速開始で車両前方から滑り込み、停止と同時にドア前へ揃う。
+        /// </summary>
+        private void BuildStationPlatform()
+        {
+            _stationRoot = new GameObject("StationPlatform").transform;
+            _stationRoot.SetParent(transform, false);
+
+            Color platform = new Color(0.52f, 0.53f, 0.51f);
+            Color platformEdge = new Color(0.92f, 0.73f, 0.16f);
+            Color wall = new Color(0.29f, 0.34f, 0.39f);
+            Color pillar = new Color(0.66f, 0.67f, 0.65f);
+
+            foreach (int side in new[] { -1, 1 })
+            {
+                StationBlock($"Platform_{side}", new Vector3(side * 3.25f, -0.36f, 0f),
+                    new Vector3(3.0f, 0.40f, 72f), platform);
+                StationBlock($"SafetyLine_{side}", new Vector3(side * 1.82f, -0.145f, 0f),
+                    new Vector3(0.12f, 0.035f, 72f), platformEdge);
+                StationBlock($"StationWall_{side}", new Vector3(side * 5.35f, 1.15f, 0f),
+                    new Vector3(0.16f, 2.8f, 72f), wall);
+
+                for (int i = -4; i <= 4; i++)
+                {
+                    StationBlock($"Pillar_{side}_{i}", new Vector3(side * 4.62f, 1.12f, i * 8f),
+                        new Vector3(0.20f, 2.7f, 0.20f), pillar);
+                }
+
+                // 壁の白い駅名標シルエット。文字は作らず、停車場と読める記号だけ足す。
+                for (int i = -3; i <= 3; i += 2)
+                {
+                    StationBlock($"StationSign_{side}_{i}", new Vector3(side * 5.24f, 1.35f, i * 10f),
+                        new Vector3(0.08f, 0.62f, 3.1f), new Color(0.91f, 0.90f, 0.84f));
+                    StationBlock($"StationSignLine_{side}_{i}", new Vector3(side * 5.19f, 1.12f, i * 10f),
+                        new Vector3(0.04f, 0.08f, 2.65f), new Color(0.95f, 0.45f, 0.15f));
+                }
+            }
+
+            _stationRoot.gameObject.SetActive(false);
+        }
+
+        private void UpdateStationPlatform(bool atStation)
+        {
+            if (_stationRoot == null)
+            {
+                return;
+            }
+
+            if (atStation && !_wasAtStation)
+            {
+                _stationRoot.localPosition = new Vector3(0f, 0f, Mathf.Max(1f, _stationApproachDistance));
+                _stationRoot.gameObject.SetActive(true);
+            }
+
+            if (atStation)
+            {
+                Vector3 p = _stationRoot.localPosition;
+                float speed = Mathf.Max(1f, _stationApproachDistance) / Mathf.Max(0.1f, _stationApproachTime);
+                p.z = Mathf.MoveTowards(p.z, 0f, speed * Time.deltaTime);
+                _stationRoot.localPosition = p;
+            }
+            else if (_wasAtStation)
+            {
+                // ドアが閉じ、発車するフレームでしまう。開口中にホームが消えることはない。
+                _stationRoot.gameObject.SetActive(false);
+            }
+            _wasAtStation = atStation;
+        }
+
+        private void StationBlock(string name, Vector3 position, Vector3 scale, Color color)
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = name;
+            go.transform.SetParent(_stationRoot, false);
+            go.transform.localPosition = position;
+            go.transform.localScale = scale;
+            Destroy(go.GetComponent<Collider>());
+            var renderer = go.GetComponent<Renderer>();
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.sharedMaterial = OpaqueMaterial(color);
         }
 
         private void BuildLayer(int side, float distance, float speed, float heightMin, float heightMax, Color tint)

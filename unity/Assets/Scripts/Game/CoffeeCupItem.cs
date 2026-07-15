@@ -10,7 +10,7 @@ namespace TrainSurvival.Game
     /// </summary>
     public sealed class CoffeeCupItem : MonoBehaviour
     {
-        [SerializeField] private float _staminaRestore = 28f; // 本数を絞った分、一杯を効かせる（2個×28＝1日約56回復）
+        [SerializeField] private float _staminaRestore = 28f; // 1日1杯なので、取りに行く価値が出る回復量
         [SerializeField] private float _spinSpeed = 100f;   // 回転（度/秒）
         [SerializeField] private float _bobAmplitude = 0.05f;
         [SerializeField] private float _bobSpeed = 2.2f;

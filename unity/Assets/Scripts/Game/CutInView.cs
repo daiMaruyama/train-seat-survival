@@ -49,6 +49,7 @@ namespace TrainSurvival.Game
         private Text _rankingEntryText;
         private Text _rankingGuideText;
         private GameObject _actionsRoot;
+        private CanvasGroup _actionsGroup;
         private bool _awaitingSignature;
         private bool _signatureDone;
         private Action _onRestart;
@@ -74,8 +75,17 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
+            // タイトルと同じく、ランキングが主役の間は給与明細と操作列を隠す。
+            // 背後の電車演出は _overRoot の直下なので、そのまま流れ続ける。
+            bool rankingOpen = RankingView.IsOpen;
+            if (_resultGroup != null && _overRoot != null && _overRoot.gameObject.activeInHierarchy
+                && _resultGroup.gameObject.activeSelf == rankingOpen)
+            {
+                _resultGroup.gameObject.SetActive(!rankingOpen);
+            }
+
             // リザルト表示中のキーショートカット（R=リトライは RunController 側が担当）
-            if (_resultGroup == null || !_resultGroup.interactable || RankingView.IsOpen || IsAwaitingSignature)
+            if (_resultGroup == null || !_resultGroup.interactable || rankingOpen || IsAwaitingSignature)
             {
                 return; // ランキング表示中／署名タイプ中は T/L を拾わない
             }
@@ -206,6 +216,7 @@ namespace TrainSurvival.Game
         {
             IsBusy = true;
             _overRoot.gameObject.SetActive(true);
+            StartCoroutine(ResultAmbientRoutine());
             _resultGroup.alpha = 0f;
             _resultGroup.interactable = false;
             _resultGroup.blocksRaycasts = false;
@@ -220,6 +231,10 @@ namespace TrainSurvival.Game
             if (_actionsRoot != null)
             {
                 _actionsRoot.SetActive(!_awaitingSignature);
+                if (_actionsGroup != null)
+                {
+                    _actionsGroup.alpha = _awaitingSignature ? 0f : 1f;
+                }
             }
             if (_stampCircle != null)
             {
@@ -265,6 +280,36 @@ namespace TrainSurvival.Game
                 FocusSignature();
             }
             // IsBusy は立てたまま（リスタートでシーンごと破棄される）
+        }
+
+        /// <summary>
+        /// リザルトの常時演出。給与明細の罫線・文字・位置は動かさず、
+        /// 背後の車窓反射と「次に触る場所」の輝度だけで生存感を出す。
+        /// </summary>
+        private IEnumerator ResultAmbientRoutine()
+        {
+            float elapsed = 0f;
+            while (_overRoot != null && _overRoot.gameObject.activeInHierarchy)
+            {
+                elapsed += Time.unscaledDeltaTime;
+
+                // 判子は大きさを動かさない。紙面がグニャつかないよう、インク濃度だけ呼吸させる。
+                if (_stampCircle != null && _resultGroup != null && _resultGroup.alpha > 0.98f)
+                {
+                    Color stamp = _stampCircle.color;
+                    stamp.a = Mathf.Lerp(0.09f, 0.18f, 0.5f + 0.5f * Mathf.Sin(elapsed * 2.15f));
+                    _stampCircle.color = stamp;
+                }
+
+                if (_signPanel != null && IsAwaitingSignature)
+                {
+                    Color sign = _signPanel.color;
+                    sign.a = Mathf.Lerp(0.08f, 0.18f, 0.5f + 0.5f * Mathf.Sin(elapsed * 3.4f));
+                    _signPanel.color = sign;
+                }
+
+                yield return null;
+            }
         }
 
         // ---- 署名（明細の紙の上でサイン→認印→退勤解禁） --------------------
@@ -349,6 +394,12 @@ namespace TrainSurvival.Game
             if (_actionsRoot != null)
             {
                 _actionsRoot.SetActive(true);
+                if (_actionsGroup != null)
+                {
+                    _actionsGroup.alpha = 0f;
+                    yield return Animate(0.32f, t => _actionsGroup.alpha = EaseOutCubic(t));
+                    _actionsGroup.alpha = 1f;
+                }
             }
             RankingView.Show(RankingStore.LastRecordedTicks);
         }
@@ -475,6 +526,11 @@ namespace TrainSurvival.Game
             _overDark = CreateImage("Dark", _overRoot, new Color(0.02f, 0.02f, 0.04f, 0f));
             Stretch(_overDark.rectTransform);
 
+            var transitGo = new GameObject("TransitBackdrop", typeof(RectTransform), typeof(TransitBackdrop));
+            RectTransform transitRect = transitGo.GetComponent<RectTransform>();
+            transitRect.SetParent(_overRoot, false);
+            transitGo.GetComponent<TransitBackdrop>().Build(0.72f);
+
             // リザルト中は明細が主役。画面端に余白だけ残す大判サイズにする
             const float W = 1360f, H = 880f;
             var resultGo = new GameObject("Result", typeof(RectTransform), typeof(CanvasGroup));
@@ -526,11 +582,12 @@ namespace TrainSurvival.Game
             BuildStamp(pr);
 
             // 3ボタン＋キーヒントは1コンテナに（署名が済むまで隠せるように）
-            var actionsGo = new GameObject("Actions", typeof(RectTransform));
+            var actionsGo = new GameObject("Actions", typeof(RectTransform), typeof(CanvasGroup));
             RectTransform actions = actionsGo.GetComponent<RectTransform>();
             actions.SetParent(resultRect, false);
             Stretch(actions);
             _actionsRoot = actionsGo;
+            _actionsGroup = actionsGo.GetComponent<CanvasGroup>();
 
             float by = -(H * 0.5f + 58f);
             var btnSize = new Vector2(360f, 92f);

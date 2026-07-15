@@ -6,6 +6,68 @@ using UnityEngine.UI;
 namespace TrainSurvival.Game
 {
     /// <summary>
+    /// EventTrigger は親UIがホバー中に非表示になると PointerExit を受け取れない。
+    /// 再表示時に色・位置が残らないよう、ボタン自身の有効/無効に合わせて必ず通常状態へ戻す。
+    /// </summary>
+    internal sealed class UiButtonVisualState : MonoBehaviour
+    {
+        private Image _border;
+        private Image _fill;
+        private Text _text;
+        private RectTransform _visual;
+        private RectTransform _shadow;
+        private Color _orange;
+        private Color _navy;
+        private Color _cream;
+        private bool _configured;
+
+        public void Configure(Image border, Image fill, Text text, RectTransform visual, RectTransform shadow,
+            Color orange, Color navy, Color cream)
+        {
+            _border = border;
+            _fill = fill;
+            _text = text;
+            _visual = visual;
+            _shadow = shadow;
+            _orange = orange;
+            _navy = navy;
+            _cream = cream;
+            _configured = true;
+            ResetVisual();
+        }
+
+        public void Hover()
+        {
+            if (!_configured) return;
+            _border.color = _cream;
+            _fill.color = _orange;
+            _text.color = _navy;
+            _visual.anchoredPosition = new Vector2(-3f, 3f);
+            _shadow.anchoredPosition = new Vector2(13f, -13f);
+        }
+
+        public void Press()
+        {
+            if (!_configured) return;
+            _visual.anchoredPosition = new Vector2(6f, -6f);
+            _shadow.anchoredPosition = new Vector2(3f, -3f);
+        }
+
+        public void ResetVisual()
+        {
+            if (!_configured) return;
+            _border.color = _orange;
+            _fill.color = _navy;
+            _text.color = _cream;
+            _visual.anchoredPosition = Vector2.zero;
+            _shadow.anchoredPosition = new Vector2(9f, -9f);
+        }
+
+        private void OnDisable() => ResetVisual();
+        private void OnEnable() => ResetVisual();
+    }
+
+    /// <summary>
     /// コードで組む uGUI の「安っぽさ」を消すための共通キット。
     /// ・角丸スプライト／柔らかいドロップシャドウをテクスチャから生成し、9スライスで綺麗に伸ばす
     /// ・パネルの角丸化・影付け、文字の縁取り、ちゃんとしたクロスヘアをワンコールで付与
@@ -211,6 +273,9 @@ namespace TrainSurvival.Game
             Inset(fill.rectTransform, bw);
             Text text = ButtonLabel(fill.rectTransform, label, fontSize, cream);
 
+            var visualState = rootGo.AddComponent<UiButtonVisualState>();
+            visualState.Configure(border, fill, text, visual, shadow.rectTransform, orange, navy, cream);
+
             var btn = rootGo.GetComponent<Button>();
             btn.transition = Selectable.Transition.None; // 見た目はこちらで制御
             btn.targetGraphic = hit;
@@ -220,28 +285,10 @@ namespace TrainSurvival.Game
             }
 
             var trigger = rootGo.AddComponent<EventTrigger>();
-            AddTrigger(trigger, EventTriggerType.PointerEnter, () =>
-            {
-                border.color = cream; fill.color = orange; text.color = navy;
-                visual.anchoredPosition = new Vector2(-3f, 3f);              // 見た目だけ浮く（判定は不動）
-                shadow.rectTransform.anchoredPosition = new Vector2(13f, -13f);
-            });
-            AddTrigger(trigger, EventTriggerType.PointerExit, () =>
-            {
-                border.color = orange; fill.color = navy; text.color = cream;
-                visual.anchoredPosition = Vector2.zero;
-                shadow.rectTransform.anchoredPosition = new Vector2(9f, -9f);
-            });
-            AddTrigger(trigger, EventTriggerType.PointerDown, () =>
-            {
-                visual.anchoredPosition = new Vector2(6f, -6f);             // 影へめり込む
-                shadow.rectTransform.anchoredPosition = new Vector2(3f, -3f);
-            });
-            AddTrigger(trigger, EventTriggerType.PointerUp, () =>
-            {
-                visual.anchoredPosition = new Vector2(-3f, 3f);
-                shadow.rectTransform.anchoredPosition = new Vector2(13f, -13f);
-            });
+            AddTrigger(trigger, EventTriggerType.PointerEnter, visualState.Hover);
+            AddTrigger(trigger, EventTriggerType.PointerExit, visualState.ResetVisual);
+            AddTrigger(trigger, EventTriggerType.PointerDown, visualState.Press);
+            AddTrigger(trigger, EventTriggerType.PointerUp, visualState.Hover);
             return btn;
         }
 

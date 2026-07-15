@@ -11,7 +11,7 @@ namespace TrainSurvival.Game
     public sealed class StaminaSystem : MonoBehaviour
     {
         [SerializeField] private float _max = 100f;
-        [SerializeField] private float _drainPerSecond = 3f;
+        [SerializeField] private float _drainPerSecond = 2.4f;
         [SerializeField] private float _recoverPerSecond = 1f;
         [SerializeField] private float _heartbeatFadeInThreshold = 0.5f;
         [SerializeField] private float _heartbeatPeakThreshold = 0.05f;

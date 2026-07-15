@@ -105,6 +105,11 @@ namespace TrainSurvival.Game
                     _prompt.text = "次の日まで休憩";
                     _prompt.color = DimText;
                 }
+                else if (_player.SeatJustTaken)
+                {
+                    _prompt.text = "先客！";
+                    _prompt.color = BarLow;
+                }
                 else if (_player.CanSitNow)
                 {
                     // 空席に照準が合った瞬間だけ、中央に大きく行動喚起（キー＋クリック両方を明示）

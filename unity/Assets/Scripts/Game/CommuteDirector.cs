@@ -32,9 +32,11 @@ namespace TrainSurvival.Game
         [SerializeField] private int _seed = 12345;
         [SerializeField] private int _stationCount = 10;
         [SerializeField] private int _standeeCount = 28;
-        [SerializeField] private float _secondsPerStation = 8f;   // サクサク進行。1駅の長さ
-        [SerializeField] private float _drainRampPerDay = 0.25f;  // 日ごとの消耗倍率の伸び。ランを青天井にしない
-        [SerializeField] private float _takerHesitation = 0.45f; // 立ち客が空席に気づいてから動くまでの迷い＝プレイヤーの勝機（ギリ反応できる長さ）
+        [SerializeField] private float _secondsPerStation = 6f;   // 待ち時間を短くし、席取りの判断を高頻度にする
+        [SerializeField] private float _drainRampPerDay = 0.18f;  // 日ごとの消耗倍率。NPC強化と重なるため上昇を少し緩める
+        [SerializeField] private float _takerHesitation = 0.72f;  // 1日目の反応猶予
+        [SerializeField] private float _hesitationDropPerDay = 0.07f; // 日を追うごとにNPCの反応が速くなる
+        [SerializeField] private float _minimumTakerHesitation = 0.35f;
 
         [Header("停車（駅サイクル）")]
         [SerializeField] private float _stationDwell = 3.5f; // 停車時間（乗降が起きる）
@@ -94,6 +96,12 @@ namespace TrainSurvival.Game
 
         /// <summary>停車中か（HUD 表示用）。</summary>
         public bool IsAtStation => _atStation;
+
+        /// <summary>乗降処理が終わり、ドアが開いている駅へ着いた通知。アイテム出現などが購読する。</summary>
+        public event System.Action<int> StationReached;
+
+        /// <summary>発車前にドアが閉じた通知。駅限定アイテムの撤去などが購読する。</summary>
+        public event System.Action DoorsClosed;
 
         private CutInView _cutIn; // 日替わりカットイン演出（描画は向こう、タイミングはこちら）
         private int _leg;                // 何本目の電車か（乗り換え回数）
@@ -207,7 +215,8 @@ namespace TrainSurvival.Game
             {
                 yield return WaitTunable(() => _arriveToDoorOpenDelay);
             }
-            _car.SetDoorsOpen(true);
+            // ホームが止まってから戸を左右へ開け、完全に開いてから乗降を始める。
+            yield return _car.AnimateDoors(open: true);
 
             AdvanceStation(); // 降りる→席が空く→乗ってくる（すべて停車中）
             yield return new WaitForSeconds(_stationDwell);
@@ -218,7 +227,8 @@ namespace TrainSurvival.Game
             float bellLen = GameAudio.Instance.GetClipLength(GameAudio.Sfx.Bell);
             float doorDelay = bellLen > 0.01f ? Mathf.Max(0f, bellLen - _doorClosePshooTail) : _bellToDoorCloseDelay;
             yield return WaitTunable(() => doorDelay);
-            _car.SetDoorsOpen(false);
+            yield return _car.AnimateDoors(open: false);
+            DoorsClosed?.Invoke();
             yield return WaitTunable(() => _bellToDepartureDelay);
             ApplyAudioTuning();
             GameAudio.Instance.Play(GameAudio.Sfx.TrainDeparture, Random.Range(0.98f, 1.03f)); // 電車発車
@@ -332,6 +342,8 @@ namespace TrainSurvival.Game
                 Vector3 spot = camp >= 0 ? SeatFrontSpot(camp) : new Vector3(0f, StandY, door.z);
                 s.Actor.Travel(new List<Vector3> { new Vector3(0f, StandY, spot.z), spot }, null);
             }
+
+            StationReached?.Invoke(CurrentStation);
         }
 
         private bool EnsureWorld()
@@ -506,7 +518,10 @@ namespace TrainSurvival.Game
         /// <summary>立ち客が空席に気づき、迷ってから歩いて座る。各段階でプレイヤーに取られたら中断。</summary>
         private IEnumerator TakeSeatRoutine(int seat, Standee taker)
         {
-            yield return new WaitForSeconds(_takerHesitation);
+            // 序盤は判断できる猶予を置き、日を追うごとにNPCが迷わなくなっていく。
+            float hesitation = Mathf.Max(_minimumTakerHesitation,
+                _takerHesitation - Mathf.Max(0, _leg) * Mathf.Max(0f, _hesitationDropPerDay));
+            yield return new WaitForSeconds(hesitation);
             if (_incoming[seat] != taker || _seatOccupant[seat] != null || _playerSeat == seat)
             {
                 yield break;

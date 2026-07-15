@@ -23,12 +23,16 @@ namespace TrainSurvival.Game
         private bool _seated;
         private int _seatIndex = -1;
         private SeatMarker _highlighted;
+        private float _seatTakenNoticeUntil;
 
         /// <summary>着席中か（StaminaSystem や HUD が読む）。</summary>
         public bool IsSeated => _seated;
 
         /// <summary>今フレーム、視線の先に座れる空席があるか（HUD のプロンプト用）。</summary>
         public bool CanSitNow { get; private set; }
+
+        /// <summary>照準を合わせていた空席をNPCに取られた直後（HUDの短い敗北フィードバック用）。</summary>
+        public bool SeatJustTaken => Time.unscaledTime < _seatTakenNoticeUntil;
 
         private void Start()
         {
@@ -56,6 +60,17 @@ namespace TrainSurvival.Game
                 CanSitNow = false;
                 Highlight(null);
                 return;
+            }
+
+            if (_highlighted != null && !_director.IsSeatGrabbable(_highlighted.Index))
+            {
+                _seatTakenNoticeUntil = Time.unscaledTime + 0.65f;
+                GameAudio.Instance.Play(GameAudio.Sfx.Ding, 0.72f);
+                if (CameraJuice.Active != null)
+                {
+                    CameraJuice.Active.Kick(new Vector3(0f, 0f, -0.8f));
+                }
+                Highlight(null);
             }
 
             SeatMarker aim = AimedSeat();

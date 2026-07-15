@@ -538,7 +538,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TrainSurvival.Game::TrainSurvival.Game.StaminaSystem
   _max: 100
-  _drainPerSecond: 3
+  _drainPerSecond: 2.4
   _recoverPerSecond: 1
   _heartbeatFadeInThreshold: 0.5
   _heartbeatPeakThreshold: 0.05
@@ -625,8 +625,10 @@ MonoBehaviour:
   _stationCount: 10
   _standeeCount: 28
   _secondsPerStation: 6
-  _drainRampPerDay: 0.25
-  _takerHesitation: 0.63
+  _drainRampPerDay: 0.18
+  _takerHesitation: 0.72
+  _hesitationDropPerDay: 0.07
+  _minimumTakerHesitation: 0.35
   _stationDwell: 3.5
   _brakeTime: 1.1
   _accelTime: 1.6
@@ -707,6 +709,8 @@ MonoBehaviour:
   _nearDistance: 8
   _farDistance: 22
   _buildingsPerLayer: 14
+  _stationApproachTime: 1.1
+  _stationApproachDistance: 54
 --- !u!4 &1440874243
 Transform:
   m_ObjectHideFlags: 0
@@ -761,23 +765,27 @@ MonoBehaviour:
   _glasses:
     label: Glasses
     prefab: {fileID: 8301312963732156748, guid: 3d98e0d50baee5b41b8d69f5fd76110a, type: 3}
-    count: 1
+    count: 2
     targetSize: 0.34
     modelEuler: {x: 0, y: 0, z: 0}
     kind: 1
   _shoes:
     label: DashShoes
     prefab: {fileID: 5030630179998441149, guid: 419c9c6d88d674698a5b338f0e44db06, type: 3}
-    count: 1
+    count: 2
     targetSize: 0.3
     modelEuler: {x: 0, y: 0, z: 0}
     kind: 2
   _floatHeight: 1.05
-  _aisleX: {x: -0.4, y: 0.4}
-  _endMargin: 1.4
-  _doorZJitter: 0.28
-  _minSpacing: 1.1
-  _respawnEachDay: 1
+  _doorSideOffset: 0.68
+  _doorZJitter: 0.18
+  _initialSpawnMin: 1
+  _initialSpawnMax: 2
+  _spawnEveryStations: 1
+  _maxSpawnsPerDay: 6
+  _maxActiveItems: 4
+  _minPlayerDistance: 1.8
+  _despawnOnDoorClose: 0
 --- !u!4 &1465364614
 Transform:
   m_ObjectHideFlags: 0

@@ -26,7 +26,7 @@ namespace TrainSurvival.Game
         private CutInView _cutIn;
         private FirstPersonController _fpc;
         private GameObject _panelRoot;
-        private RectTransform _swayRoot; // クリップボードの吊り下げ支点（ポーズ中に揺らす）
+        private RectTransform _boardRoot;
         private bool _leaving; // 退職フェード中（多重発火と再オープンを防ぐ）
 
         private void Start()
@@ -45,12 +45,6 @@ namespace TrainSurvival.Game
 
         private void Update()
         {
-            // 開いている間はクリップボードが画鋲を支点にゆっくり揺れる（timeScale=0でも動く＝画面が死なない）
-            if (IsOpen && _swayRoot != null)
-            {
-                _swayRoot.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.unscaledTime * 0.9f) * 0.9f);
-            }
-
             Keyboard kb = Keyboard.current;
             if (_leaving || kb == null || !kb.escapeKey.wasPressedThisFrame)
             {
@@ -167,18 +161,18 @@ namespace TrainSurvival.Game
             Stretch(dim.rectTransform);
             dim.raycastTarget = true; // 背後のゲームUIを触らせない
 
-            // 揺れの支点（クリップボード上端＝画鋲の位置）。ポーズ中はここを軸にゆらゆら揺れる
-            var swayGo = new GameObject("BoardSway", typeof(RectTransform));
-            _swayRoot = swayGo.GetComponent<RectTransform>();
-            _swayRoot.SetParent(panelRootRect, false);
-            _swayRoot.anchorMin = _swayRoot.anchorMax = new Vector2(0.5f, 0.5f);
-            _swayRoot.anchoredPosition = new Vector2(0f, 400f);
-            _swayRoot.sizeDelta = Vector2.zero;
+            // クリップボードは細線と文字の視認性を優先し、常に固定する。
+            var boardGo = new GameObject("BoardRoot", typeof(RectTransform));
+            _boardRoot = boardGo.GetComponent<RectTransform>();
+            _boardRoot.SetParent(panelRootRect, false);
+            _boardRoot.anchorMin = _boardRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            _boardRoot.anchoredPosition = new Vector2(0f, 400f);
+            _boardRoot.sizeDelta = Vector2.zero;
 
             // クリップボード（台座の板・ハード影）
-            Image shadow = CreateImage("BoardShadow", _swayRoot, new Color(0f, 0f, 0f, 0.55f));
+            Image shadow = CreateImage("BoardShadow", _boardRoot, new Color(0f, 0f, 0f, 0.55f));
             Center(shadow.rectTransform, new Vector2(10f, -410f), new Vector2(620f, 800f));
-            Image board = CreateImage("Board", _swayRoot, BoardBg);
+            Image board = CreateImage("Board", _boardRoot, BoardBg);
             board.raycastTarget = true;
             RectTransform br = board.rectTransform;
             Center(br, new Vector2(0f, -400f), new Vector2(620f, 800f));
